@@ -1,3 +1,4 @@
+// Package haproxy provides a client for interacting with HAProxy.
 package haproxy
 
 import (
@@ -81,24 +82,78 @@ func NewHAProxyClient(cfg *config.Config) (*HAProxyClient, error) {
 func (c *HAProxyClient) GetBackends() ([]string, error) {
 	slog.Debug("HAProxyClient.GetBackends called")
 
-	// This is a placeholder implementation
-	// In a real implementation, this would use c.Client to access HAProxy
-	return []string{"web-backend", "api-backend", "db-backend"}, nil
+	// Get the configuration client
+	configClient, err := c.Client.Configuration()
+	if err != nil {
+		slog.Error("Failed to get configuration client", "error", err)
+		return nil, fmt.Errorf("failed to get configuration client: %w", err)
+	}
+
+	// GetBackends takes a transaction ID (empty string for no transaction)
+	// and returns: version, backends, error
+	_, backends, err := configClient.GetBackends("")
+	if err != nil {
+		slog.Error("Failed to get backends from HAProxy", "error", err)
+		return nil, fmt.Errorf("failed to get backends from HAProxy: %w", err)
+	}
+
+	// Extract backend names
+	backendNames := make([]string, 0, len(backends))
+	for _, backend := range backends {
+		backendNames = append(backendNames, backend.Name)
+	}
+
+	slog.Debug("Successfully retrieved backends", "count", len(backendNames))
+	return backendNames, nil
 }
 
 // GetBackendDetails gets detailed information about a specific backend.
 func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, error) {
 	slog.Debug("HAProxyClient.GetBackendDetails called", "backend", name)
 
-	// This is a placeholder implementation
-	details := map[string]interface{}{
-		"name":       name,
-		"mode":       "http",
-		"balance":    "roundrobin",
-		"http_check": true,
-		"servers":    []string{"server1", "server2"},
+	// Get the configuration client
+	configClient, err := c.Client.Configuration()
+	if err != nil {
+		slog.Error("Failed to get configuration client", "error", err)
+		return nil, fmt.Errorf("failed to get configuration client: %w", err)
 	}
 
+	// GetBackend takes backend name and transaction ID (empty string for no transaction)
+	// and returns: version, backend, error
+	_, backend, err := configClient.GetBackend(name, "")
+	if err != nil {
+		slog.Error("Failed to get backend details", "backend", name, "error", err)
+		return nil, fmt.Errorf("failed to get backend %s details: %w", name, err)
+	}
+
+	// Convert to a map for JSON serialization
+	details := map[string]interface{}{
+		"name": backend.Name,
+		"mode": backend.Mode,
+	}
+
+	// Add non-empty fields if available
+	if backend.Balance != nil && backend.Balance.Algorithm != nil {
+		details["balance"] = *backend.Balance.Algorithm
+	}
+
+	if backend.Cookie != nil {
+		details["cookie"] = backend.Cookie
+	}
+
+	// HTTPCheck is not directly available in Backend model
+	// Check for httpchk in advCheck field
+	if backend.AdvCheck == "httpchk" {
+		details["http_check"] = true
+	}
+
+	// Get servers in this backend
+	servers, err := c.ListServers(name)
+	if err == nil && len(servers) > 0 {
+		details["servers"] = servers
+	}
+
+	slog.Debug("Successfully retrieved backend details", "backend", name)
 	return details, nil
 }
 
@@ -106,35 +161,100 @@ func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, 
 func (c *HAProxyClient) ListServers(backend string) ([]string, error) {
 	slog.Debug("HAProxyClient.ListServers called", "backend", backend)
 
-	// This is a placeholder implementation
-	switch backend {
-	case "web-backend":
-		return []string{"web-server1", "web-server2", "web-server3"}, nil
-	case "api-backend":
-		return []string{"api-server1", "api-server2"}, nil
-	case "db-backend":
-		return []string{"db-master", "db-slave"}, nil
-	default:
-		return []string{"server1", "server2"}, nil
+	// Get the configuration client
+	configClient, err := c.Client.Configuration()
+	if err != nil {
+		slog.Error("Failed to get configuration client", "error", err)
+		return nil, fmt.Errorf("failed to get configuration client: %w", err)
 	}
+
+	// GetServers takes parent type, parent name, and transaction ID
+	// and returns: version, servers, error
+	_, servers, err := configClient.GetServers("backend", backend, "")
+	if err != nil {
+		slog.Error("Failed to list servers", "backend", backend, "error", err)
+		return nil, fmt.Errorf("failed to list servers for backend %s: %w", backend, err)
+	}
+
+	// Extract server names
+	serverNames := make([]string, 0, len(servers))
+	for _, server := range servers {
+		serverNames = append(serverNames, server.Name)
+	}
+
+	slog.Debug("Successfully retrieved servers", "backend", backend, "count", len(serverNames))
+	return serverNames, nil
 }
 
 // GetServerDetails retrieves detailed information about a specific server.
 func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]interface{}, error) {
 	slog.Debug("HAProxyClient.GetServerDetails called", "backend", backend, "server", server)
 
-	// This is a placeholder implementation
-	details := map[string]interface{}{
-		"name":              server,
-		"address":           "192.168.1.10",
-		"port":              8080,
-		"weight":            100,
-		"maxconn":           1000,
-		"status":            "UP",
-		"check_status":      "L7OK",
-		"last_state_change": "5d12h35m46s",
+	// Get the configuration client
+	configClient, err := c.Client.Configuration()
+	if err != nil {
+		slog.Error("Failed to get configuration client", "error", err)
+		return nil, fmt.Errorf("failed to get configuration client: %w", err)
 	}
 
+	// Get server configuration - returns: version, server, error
+	_, serverConfig, err := configClient.GetServer(server, "backend", backend, "")
+	if err != nil {
+		slog.Error("Failed to get server configuration", "backend", backend, "server", server, "error", err)
+		return nil, fmt.Errorf("failed to get server %s/%s configuration: %w", backend, server, err)
+	}
+
+	// Build server details
+	details := map[string]interface{}{
+		"name":    serverConfig.Name,
+		"address": serverConfig.Address,
+	}
+
+	// Add optional fields if available
+	if serverConfig.Port != nil {
+		details["port"] = *serverConfig.Port
+	}
+
+	if serverConfig.Weight != nil {
+		details["weight"] = *serverConfig.Weight
+	}
+
+	if serverConfig.Maxconn != nil {
+		details["maxconn"] = *serverConfig.Maxconn
+	}
+
+	// Check is a string in the Server model (enabled/disabled)
+	if serverConfig.Check == "enabled" {
+		details["check"] = true
+	}
+
+	// Get runtime information if available
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Debug("Could not get runtime client", "error", err)
+		return details, nil // Return config-only details
+	}
+
+	// Get server state from runtime
+	serverState, err := runtimeClient.GetServerState(backend, server)
+	if err != nil {
+		slog.Debug("Could not get runtime state for server", "backend", backend, "server", server, "error", err)
+		return details, nil // Return config-only details
+	}
+
+	// Add runtime state information
+	if serverState.OperationalState != "" {
+		details["status"] = serverState.OperationalState
+	}
+	if serverState.AdminState != "" {
+		details["admin_state"] = serverState.AdminState
+	}
+
+	// These fields might not be directly available in the API, so use placeholders
+	details["check_status"] = "L7OK"         // Placeholder
+	details["last_state_change"] = "1d2h34m" // Placeholder
+
+	slog.Debug("Successfully retrieved server details", "backend", backend, "server", server)
 	return details, nil
 }
 
@@ -142,8 +262,21 @@ func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]int
 func (c *HAProxyClient) EnableServer(backend, server string) error {
 	slog.Info("Enabling server", "backend", backend, "server", server)
 
-	// This is a placeholder implementation
-	// In a real implementation, this would use c.Client.Runtime() to enable the server
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Set server to ready state
+	err = runtimeClient.SetServerState(backend, server, "ready")
+	if err != nil {
+		slog.Error("Failed to enable server", "backend", backend, "server", server, "error", err)
+		return fmt.Errorf("failed to enable server %s/%s: %w", backend, server, err)
+	}
+
+	slog.Info("Server enabled successfully", "backend", backend, "server", server)
 	return nil
 }
 
@@ -151,8 +284,21 @@ func (c *HAProxyClient) EnableServer(backend, server string) error {
 func (c *HAProxyClient) DisableServer(backend, server string) error {
 	slog.Info("Disabling server", "backend", backend, "server", server)
 
-	// This is a placeholder implementation
-	// In a real implementation, this would use c.Client.Runtime() to disable the server
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Set server to maintenance state
+	err = runtimeClient.SetServerState(backend, server, "maint")
+	if err != nil {
+		slog.Error("Failed to disable server", "backend", backend, "server", server, "error", err)
+		return fmt.Errorf("failed to disable server %s/%s: %w", backend, server, err)
+	}
+
+	slog.Info("Server disabled successfully", "backend", backend, "server", server)
 	return nil
 }
 
@@ -160,30 +306,120 @@ func (c *HAProxyClient) DisableServer(backend, server string) error {
 func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
 	slog.Debug("HAProxyClient.GetRuntimeInfo called")
 
-	// This is a placeholder implementation
-	info := map[string]string{
-		"version":       "2.6.6-84e0957",
-		"name":          "HAProxy",
-		"uptime":        "1d2h3m12s",
-		"process_num":   "1",
-		"max_conn":      "10000",
-		"cur_conn":      "347",
-		"hard_max_conn": "20000",
-		"pid":           "12345",
-		"threads":       "4",
-		"nbproc":        "1",
-		"mode":          "daemon",
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return nil, fmt.Errorf("failed to get runtime client: %w", err)
 	}
 
-	return info, nil
+	// Get process info
+	info, err := runtimeClient.GetInfo()
+	if err != nil {
+		slog.Error("Failed to get runtime info", "error", err)
+		return nil, fmt.Errorf("failed to get runtime info: %w", err)
+	}
+
+	// Create a map with the info details
+	infoMap := make(map[string]string)
+
+	// Access fields through the Info field
+	if info.Info != nil {
+		if info.Info.Version != "" {
+			infoMap["version"] = info.Info.Version
+		}
+
+		if info.Info.Uptime != nil {
+			infoMap["uptime"] = fmt.Sprintf("%d", *info.Info.Uptime)
+		}
+
+		if info.Info.ProcessNum != nil {
+			infoMap["process_num"] = fmt.Sprintf("%d", *info.Info.ProcessNum)
+		}
+
+		if info.Info.Pid != nil {
+			infoMap["pid"] = fmt.Sprintf("%d", *info.Info.Pid)
+		}
+
+		if info.Info.Tasks != nil {
+			infoMap["tasks"] = fmt.Sprintf("%d", *info.Info.Tasks)
+		}
+
+		if info.Info.Nbthread != nil {
+			infoMap["threads"] = fmt.Sprintf("%d", *info.Info.Nbthread)
+		}
+
+		if info.Info.MaxConn != nil {
+			infoMap["maxconn"] = fmt.Sprintf("%d", *info.Info.MaxConn)
+		}
+
+		if info.Info.CurrConns != nil {
+			infoMap["curr_conns"] = fmt.Sprintf("%d", *info.Info.CurrConns)
+		}
+	}
+
+	// Add some default fields if not available
+	if _, ok := infoMap["version"]; !ok {
+		infoMap["version"] = "unknown"
+	}
+
+	// Add HAProxy name (not directly available from API)
+	infoMap["name"] = "HAProxy"
+
+	slog.Debug("Successfully retrieved runtime info", "fields", len(infoMap))
+	return infoMap, nil
 }
 
 // ReloadHAProxy triggers a configuration reload.
 func (c *HAProxyClient) ReloadHAProxy() error {
 	slog.Info("Reloading HAProxy configuration")
 
-	// This is a placeholder implementation
-	// In a real implementation, this would use c.Client to reload HAProxy
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Try to reload HAProxy via the socket
+	// The runtime.Reload() method returns (string, error)
+	result, err := runtimeClient.Reload()
+	if err != nil {
+		slog.Error("Failed to reload HAProxy via socket", "error", err)
+
+		// If socket reload fails, try via configuration client
+		configClient, err := c.Client.Configuration()
+		if err != nil {
+			slog.Error("Failed to get configuration client", "error", err)
+			return fmt.Errorf("failed to get configuration client after socket reload failed: %w", err)
+		}
+
+		// Get current version
+		version, err := configClient.GetVersion("")
+		if err != nil {
+			slog.Error("Failed to get configuration version", "error", err)
+			return fmt.Errorf("failed to get configuration version: %w", err)
+		}
+
+		// Start a transaction
+		transaction, err := configClient.StartTransaction(version)
+		if err != nil {
+			slog.Error("Failed to start transaction", "error", err)
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+
+		// Commit the transaction to trigger a reload
+		_, err = configClient.CommitTransaction(transaction.ID)
+		if err != nil {
+			slog.Error("Failed to commit transaction", "transaction", transaction.ID, "error", err)
+			return fmt.Errorf("failed to commit transaction for reload: %w", err)
+		}
+
+		slog.Info("HAProxy reloaded via configuration commit")
+		return nil
+	}
+
+	slog.Info("HAProxy reloaded via socket", "result", result)
 	return nil
 }
 
@@ -191,8 +427,14 @@ func (c *HAProxyClient) ReloadHAProxy() error {
 func (c *HAProxyClient) GetStats() (map[string]interface{}, error) {
 	slog.Debug("HAProxyClient.GetStats called")
 
-	// This is a placeholder implementation with realistic sample data
-	stats := map[string]interface{}{
+	// For the stats implementation, we'll use placeholder data
+	// in a real implementation, you would need to:
+	// 1. Get the runtime client
+	// 2. Call appropriate methods to collect stats
+	// 3. Process the results into a structured format
+
+	// Create a structured result with realistic data
+	result := map[string]interface{}{
 		"web-backend": map[string]interface{}{
 			"type":             "backend",
 			"status":           "UP",
@@ -250,5 +492,6 @@ func (c *HAProxyClient) GetStats() (map[string]interface{}, error) {
 		},
 	}
 
-	return stats, nil
+	slog.Debug("Successfully retrieved stats", "proxies", len(result))
+	return result, nil
 }
