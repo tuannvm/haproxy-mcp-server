@@ -13,6 +13,10 @@ A Model Context Protocol (MCP) server for HAProxy implemented in Go, leveraging 
 
 The HAProxy MCP Server provides a standardized way for LLMs to interact with HAProxy's runtime API via the Model Context Protocol (MCP). This enables LLMs to perform HAProxy administration tasks, monitor server status, manage backend servers, and analyze traffic patterns, all through natural language interfaces.
 
+![Screenshot-1](https://github.com/user-attachments/assets/8d3bf7f5-be98-4997-b676-120891692f15)
+![Screenshot-2](https://github.com/user-attachments/assets/a443b5d2-8d7d-4daf-a6c1-115912f704d1)
+![Screenshot-3](https://github.com/user-attachments/assets/fa387604-4eb9-4456-adc3-5a8395e5ecc1)
+
 ## Features
 
 - **Full HAProxy Runtime API Support**: Comprehensive coverage of HAProxy's runtime API commands
