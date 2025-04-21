@@ -11,8 +11,8 @@ import (
 
 // HAProxyClient is a combined client that can interact with HAProxy through both runtime API and stats API
 type HAProxyClient struct {
-	RuntimeClient *runtimeclient.HAProxyClient
-	StatsClient   *statsclient.StatsClient
+	RuntimeClient RuntimeClient
+	StatsClient   StatsClient
 	StatsURL      string
 }
 

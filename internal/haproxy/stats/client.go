@@ -8,7 +8,15 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/tuannvm/haproxy-mcp-server/internal/haproxy/common"
 )
+
+// StatsClient is a client for fetching HAProxy stats from the stats page
+type StatsClient struct {
+	StatsURL   string       // URL to HAProxy stats page (e.g., http://127.0.0.1:1936/;json)
+	httpClient *http.Client // Shared HTTP client
+}
 
 // NewStatsClient creates a new HAProxy stats client
 func NewStatsClient(statsURL string) (*StatsClient, error) {
@@ -20,27 +28,28 @@ func NewStatsClient(statsURL string) (*StatsClient, error) {
 
 	return &StatsClient{
 		StatsURL: statsURL,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}, nil
+}
+
+// buildURL builds a URL with the given suffix
+func (c *StatsClient) buildURL(suffix string) string {
+	baseURL := c.StatsURL
+	if baseURL[len(baseURL)-1] != '/' {
+		baseURL += "/"
+	}
+	return baseURL + suffix
 }
 
 // GetStats fetches statistics from HAProxy stats page
 func (c *StatsClient) GetStats() (*HAProxyStats, error) {
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
 	// Construct URL for JSON stats
-	statsURL := c.StatsURL
-	if statsURL[len(statsURL)-1] != '/' {
-		statsURL += "/"
-	}
-	if statsURL[len(statsURL)-6:] != ";json" {
-		statsURL += ";json"
-	}
+	statsURL := c.buildURL(";json")
 
 	// Make HTTP request
-	resp, err := client.Get(statsURL)
+	resp, err := c.httpClient.Get(statsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch HAProxy stats: %w", err)
 	}
@@ -71,25 +80,16 @@ func (c *StatsClient) GetStats() (*HAProxyStats, error) {
 
 // GetSchema fetches the JSON schema for HAProxy stats
 func (c *StatsClient) GetSchema() (*StatsSchema, error) {
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
 	// Construct URL for schema
 	schemaURL := c.StatsURL
-	if schemaURL[len(schemaURL)-1] != '/' {
-		schemaURL += "/"
-	}
-	// Replace ;json with ;json-schema if present, otherwise append it
 	if schemaURL[len(schemaURL)-6:] == ";json" {
 		schemaURL = schemaURL[:len(schemaURL)-5] + "-schema"
 	} else {
-		schemaURL += ";json-schema"
+		schemaURL = c.buildURL(";json-schema")
 	}
 
 	// Make HTTP request
-	resp, err := client.Get(schemaURL)
+	resp, err := c.httpClient.Get(schemaURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch HAProxy stats schema: %w", err)
 	}
@@ -119,8 +119,8 @@ func (c *StatsClient) GetSchema() (*StatsSchema, error) {
 }
 
 // FilterStats filters the stats by proxy name and/or service name
-func (c *StatsClient) FilterStats(stats *HAProxyStats, proxyName, serviceName string) []StatsItem {
-	var filtered []StatsItem
+func (c *StatsClient) FilterStats(stats *HAProxyStats, proxyName, serviceName string) []common.StatItem {
+	var filtered []common.StatItem
 
 	for _, item := range stats.Stats {
 		// Apply proxy name filter if provided
@@ -133,19 +133,31 @@ func (c *StatsClient) FilterStats(stats *HAProxyStats, proxyName, serviceName st
 			continue
 		}
 
-		filtered = append(filtered, item)
+		filtered = append(filtered, common.StatItem{
+			ProxyName:   item.PxName,
+			ServiceName: item.SvName,
+			Type:        item.Type,
+			Status:      item.Status,
+			Weight:      item.Weight,
+		})
 	}
 
 	return filtered
 }
 
 // GetFrontends returns all frontend stats
-func (c *StatsClient) GetFrontends(stats *HAProxyStats) []StatsItem {
-	var frontends []StatsItem
+func (c *StatsClient) GetFrontends(stats *HAProxyStats) []common.StatItem {
+	var frontends []common.StatItem
 
 	for _, item := range stats.Stats {
 		if item.Type == 0 { // Type 0 is frontend
-			frontends = append(frontends, item)
+			frontends = append(frontends, common.StatItem{
+				ProxyName:   item.PxName,
+				ServiceName: item.SvName,
+				Type:        item.Type,
+				Status:      item.Status,
+				Weight:      item.Weight,
+			})
 		}
 	}
 
@@ -153,12 +165,18 @@ func (c *StatsClient) GetFrontends(stats *HAProxyStats) []StatsItem {
 }
 
 // GetBackends returns all backend stats
-func (c *StatsClient) GetBackends(stats *HAProxyStats) []StatsItem {
-	var backends []StatsItem
+func (c *StatsClient) GetBackends(stats *HAProxyStats) []common.StatItem {
+	var backends []common.StatItem
 
 	for _, item := range stats.Stats {
 		if item.Type == 1 { // Type 1 is backend
-			backends = append(backends, item)
+			backends = append(backends, common.StatItem{
+				ProxyName:   item.PxName,
+				ServiceName: item.SvName,
+				Type:        item.Type,
+				Status:      item.Status,
+				Weight:      item.Weight,
+			})
 		}
 	}
 
@@ -166,12 +184,18 @@ func (c *StatsClient) GetBackends(stats *HAProxyStats) []StatsItem {
 }
 
 // GetServers returns all server stats
-func (c *StatsClient) GetServers(stats *HAProxyStats) []StatsItem {
-	var servers []StatsItem
+func (c *StatsClient) GetServers(stats *HAProxyStats) []common.StatItem {
+	var servers []common.StatItem
 
 	for _, item := range stats.Stats {
 		if item.Type == 2 { // Type 2 is server
-			servers = append(servers, item)
+			servers = append(servers, common.StatItem{
+				ProxyName:   item.PxName,
+				ServiceName: item.SvName,
+				Type:        item.Type,
+				Status:      item.Status,
+				Weight:      item.Weight,
+			})
 		}
 	}
 
@@ -179,12 +203,18 @@ func (c *StatsClient) GetServers(stats *HAProxyStats) []StatsItem {
 }
 
 // GetServersByBackend returns all server stats for a specific backend
-func (c *StatsClient) GetServersByBackend(stats *HAProxyStats, backendName string) []StatsItem {
-	var servers []StatsItem
+func (c *StatsClient) GetServersByBackend(stats *HAProxyStats, backendName string) []common.StatItem {
+	var servers []common.StatItem
 
 	for _, item := range stats.Stats {
 		if item.Type == 2 && item.PxName == backendName { // Type 2 is server
-			servers = append(servers, item)
+			servers = append(servers, common.StatItem{
+				ProxyName:   item.PxName,
+				ServiceName: item.SvName,
+				Type:        item.Type,
+				Status:      item.Status,
+				Weight:      item.Weight,
+			})
 		}
 	}
 
