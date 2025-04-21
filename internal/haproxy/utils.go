@@ -69,17 +69,3 @@ func parseAddressPort(addr string) (address string, port int) {
 
 	return address, port
 }
-
-// safeParseInt parses a string to int with fallback to default value
-func safeParseInt(s string, defaultVal int) int {
-	if s == "" {
-		return defaultVal
-	}
-
-	val, err := strconv.Atoi(s)
-	if err != nil {
-		return defaultVal
-	}
-
-	return val
-}
