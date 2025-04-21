@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -60,23 +61,46 @@ func main() {
 	slog.Info("Loaded configuration", "config", cfg)
 
 	// --- HAProxy Client ---
-	// Create client with just the socket path
-	socketPath := cfg.HAProxyRuntimeSocket
+	var runtimeAPIURL string
 
-	// Validate socket path exists
-	if socketPath == "" {
-		slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
+	// Handle connection based on runtime mode
+	switch cfg.HAProxyRuntimeMode {
+	case "unix":
+		// Unix socket mode
+		if cfg.HAProxyRuntimeSocket == "" {
+			slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
+			os.Exit(1)
+		}
+
+		// Create a URL with unix socket protocol
+		u := &url.URL{
+			Scheme: "unix",
+			Path:   cfg.HAProxyRuntimeSocket,
+		}
+		runtimeAPIURL = fmt.Sprintf("%s/v2", u)
+
+	case "tcp4":
+		// TCP4 mode
+		if cfg.HAProxyHost == "" {
+			slog.Error("HAProxy host is empty. Please set HAPROXY_HOST env variable.")
+			os.Exit(1)
+		}
+
+		// Create a TCP URL
+		u := &url.URL{
+			Scheme: "tcp",
+			Host:   fmt.Sprintf("%s:%d", cfg.HAProxyHost, cfg.HAProxyPort),
+		}
+		runtimeAPIURL = u.String()
+
+	default:
+		slog.Error("Invalid HAProxy runtime mode", "mode", cfg.HAProxyRuntimeMode)
 		os.Exit(1)
 	}
 
-	// Get the runtime API URL from the socket path
-	runtimeAPIURL, err := haproxy.GetHaproxyAPIEndpoint(socketPath)
-	if err != nil {
-		slog.Error("Failed to create HAProxy API endpoint", "error", err)
-		os.Exit(1)
-	}
+	slog.Info("Connecting to HAProxy", "runtimeAPIURL", runtimeAPIURL)
 
-	// Create the HAProxy client with both required parameters
+	// Create the HAProxy client with the appropriate runtime API URL
 	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL, "")
 	if err != nil {
 		// Log fatal here as the client is essential for the server's function

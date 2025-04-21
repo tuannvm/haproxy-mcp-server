@@ -57,44 +57,38 @@ docker run -it --rm \
 
 To use this server with MCP-compatible AI assistants, configure the assistant with the following connection details:
 
-### For HAProxy Runtime API over TCP4:
+### HAProxy Runtime API over TCP4:
 
 ```json
 {
-  "tools": [
-    {
-      "type": "mcp",
-      "mcp": {
-        "transport": "stdio",
-        "binary": "/path/to/haproxy-mcp-server",
-        "env": {
-          "HAPROXY_HOST": "your-haproxy-host",
-          "HAPROXY_PORT": "9999",
-          "HAPROXY_RUNTIME_MODE": "tcp4"
-        }
+  "mcpServers": {
+    "haproxy": {
+      "command": "haproxy-mcp-server",
+      "env": {
+        "HAPROXY_HOST": "localhost",
+        "HAPROXY_PORT": "9999",
+        "HAPROXY_RUNTIME_MODE": "tcp4",
+        "MCP_TRANSPORT": "stdio"
       }
     }
-  ]
+  }
 }
 ```
 
-### For HAProxy Runtime API over Unix Socket:
+### HAProxy Runtime API over Unix Socket:
 
 ```json
 {
-  "tools": [
-    {
-      "type": "mcp",
-      "mcp": {
-        "transport": "stdio",
-        "binary": "/path/to/haproxy-mcp-server",
-        "env": {
-          "HAPROXY_RUNTIME_MODE": "unix",
-          "HAPROXY_RUNTIME_SOCKET": "/var/run/haproxy/admin.sock"
-        }
+  "mcpServers": {
+    "haproxy": {
+      "command": "haproxy-mcp-server",
+      "env": {
+        "HAPROXY_RUNTIME_MODE": "unix",
+        "HAPROXY_RUNTIME_SOCKET": "/var/run/haproxy/admin.sock",
+        "MCP_TRANSPORT": "stdio"
       }
     }
-  ]
+  }
 }
 ```
 
@@ -118,13 +112,15 @@ The server can be configured using the following environment variables:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| HAPROXY_HOST | Host of the HAProxy instance | 127.0.0.1 |
-| HAPROXY_PORT | Port for the HAProxy Runtime API | 9999 |
+| HAPROXY_HOST | Host of the HAProxy instance (TCP4 mode only) | 127.0.0.1 |
+| HAPROXY_PORT | Port for the HAProxy Runtime API (TCP4 mode only) | 9999 |
 | HAPROXY_RUNTIME_MODE | Connection mode: "tcp4" or "unix" | tcp4 |
-| HAPROXY_RUNTIME_SOCKET | Socket path (used only with unix mode) | /var/run/haproxy/admin.sock |
+| HAPROXY_RUNTIME_SOCKET | Socket path (Unix mode only) | /var/run/haproxy/admin.sock |
 | MCP_TRANSPORT | MCP transport method (stdio/http) | stdio |
 | MCP_PORT | Port for HTTP transport (when using http) | 8080 |
 | LOG_LEVEL | Logging level (debug/info/warn/error) | info |
+
+**Note:** You must use either TCP4 mode OR Unix socket mode, not both simultaneously. Set `HAPROXY_RUNTIME_MODE` to the appropriate value and only provide the relevant connection parameters.
 
 ## Security Considerations
 
