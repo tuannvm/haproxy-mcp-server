@@ -1,6 +1,8 @@
 package haproxy
 
 import (
+	"context"
+
 	"github.com/tuannvm/haproxy-mcp-server/internal/haproxy/common"
 	runtimeclient "github.com/tuannvm/haproxy-mcp-server/internal/haproxy/runtime"
 	"github.com/tuannvm/haproxy-mcp-server/internal/haproxy/stats"
@@ -10,7 +12,9 @@ import (
 type RuntimeClient interface {
 	// Runtime API operations
 	ExecuteRuntimeCommand(command string) (string, error)
+	ExecuteRuntimeCommandWithContext(ctx context.Context, command string) (string, error)
 	GetProcessInfo() (map[string]string, error)
+	GetProcessInfoWithContext(ctx context.Context) (map[string]string, error)
 	Close() error
 
 	// Backend operations

@@ -1,6 +1,7 @@
 package haproxy
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -65,9 +66,23 @@ func (c *HAProxyClient) Close() error {
 
 // ExecuteRuntimeCommand executes a command on HAProxy's Runtime API
 func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
+	return c.ExecuteRuntimeCommandWithContext(context.Background(), command)
+}
+
+// ExecuteRuntimeCommandWithContext executes a command on HAProxy's Runtime API with context
+func (c *HAProxyClient) ExecuteRuntimeCommandWithContext(ctx context.Context, command string) (string, error) {
 	if c.RuntimeClient == nil {
 		return "", fmt.Errorf("runtime client is not initialized")
 	}
+
+	// Use context-aware version if available
+	if ctxClient, ok := c.RuntimeClient.(interface {
+		ExecuteRuntimeCommandWithContext(ctx context.Context, command string) (string, error)
+	}); ok {
+		return ctxClient.ExecuteRuntimeCommandWithContext(ctx, command)
+	}
+
+	// Fall back to non-context version
 	return c.RuntimeClient.ExecuteRuntimeCommand(command)
 }
 

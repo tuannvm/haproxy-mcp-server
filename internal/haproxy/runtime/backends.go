@@ -54,6 +54,15 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 	cmd := fmt.Sprintf("show stat %s", backendName)
 	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
+		// Check if this is a structured HAProxy error
+		if haErr, ok := err.(HAProxyError); ok {
+			// Handle HAProxy-specific errors (like backend not found)
+			if haErr.Code == 1 {
+				slog.Debug("Backend not found in HAProxy", "backend", backendName)
+				return nil, fmt.Errorf("backend not found: %s", backendName)
+			}
+		}
+
 		slog.Error("Failed to get backend stats", "backend", backendName, "error", err)
 		return nil, fmt.Errorf("failed to get backend stats: %w", err)
 	}

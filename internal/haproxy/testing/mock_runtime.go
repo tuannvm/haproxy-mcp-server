@@ -1,6 +1,7 @@
 package testing
 
 import (
+	"context"
 	"fmt"
 
 	runtimeclient "github.com/tuannvm/haproxy-mcp-server/internal/haproxy/runtime"
@@ -81,12 +82,34 @@ func (m *MockRuntimeClient) ExecuteRuntimeCommand(command string) (string, error
 	return "mock_response", nil
 }
 
+// ExecuteRuntimeCommandWithContext implements RuntimeClient.ExecuteRuntimeCommandWithContext
+func (m *MockRuntimeClient) ExecuteRuntimeCommandWithContext(ctx context.Context, command string) (string, error) {
+	// Check if context is already canceled
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	// Delegate to the non-context version
+	return m.ExecuteRuntimeCommand(command)
+}
+
 // GetProcessInfo implements RuntimeClient.GetProcessInfo
 func (m *MockRuntimeClient) GetProcessInfo() (map[string]string, error) {
 	if m.FailGetProcessInfo {
 		return nil, fmt.Errorf("mock error getting process info")
 	}
 	return m.ProcessInfo, nil
+}
+
+// GetProcessInfoWithContext implements RuntimeClient.GetProcessInfoWithContext
+func (m *MockRuntimeClient) GetProcessInfoWithContext(ctx context.Context) (map[string]string, error) {
+	// Check if context is already canceled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Delegate to the non-context version
+	return m.GetProcessInfo()
 }
 
 // Close implements RuntimeClient.Close

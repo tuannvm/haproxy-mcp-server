@@ -217,6 +217,15 @@ func (c *HAProxyClient) GetServerState(backend, server string) (string, error) {
 	cmd := fmt.Sprintf("show servers state %s %s", backend, server)
 	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
+		// Check if this is a structured HAProxy error
+		if haErr, ok := err.(HAProxyError); ok {
+			// Handle HAProxy-specific errors (like server not found)
+			if haErr.Code == 1 {
+				slog.Debug("Server not found in HAProxy", "backend", backend, "server", server)
+				return "", fmt.Errorf("server %s not found in backend %s", server, backend)
+			}
+		}
+
 		slog.Error("Failed to get server state", "backend", backend, "server", server, "error", err)
 		return "", fmt.Errorf("failed to get server state for %s/%s: %w", backend, server, err)
 	}

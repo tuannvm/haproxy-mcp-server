@@ -1,6 +1,7 @@
 package haproxy
 
 import (
+	"fmt"
 	"net/url"
 )
 
@@ -75,4 +76,25 @@ type ExecuteContext struct {
 	Backend     string
 	Server      string
 	Options     *CommandOptions
+}
+
+// HAProxyError represents a structured error returned by HAProxy
+type HAProxyError struct {
+	Code    int
+	Message string
+	Command string
+}
+
+// Error implements the error interface
+func (e HAProxyError) Error() string {
+	return fmt.Sprintf("[%d]: %s (command: %s)", e.Code, e.Message, e.Command)
+}
+
+// NewHAProxyError creates a new HAProxyError
+func NewHAProxyError(code int, message string, command string) HAProxyError {
+	return HAProxyError{
+		Code:    code,
+		Message: message,
+		Command: command,
+	}
 }
