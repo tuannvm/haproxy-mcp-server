@@ -60,7 +60,16 @@ func main() {
 	slog.Info("Loaded configuration", "config", cfg)
 
 	// --- HAProxy Client ---
-	haproxyClient, err := haproxy.NewHAProxyClient(cfg)
+	// Create client with just the socket path
+	socketPath := cfg.HAProxyRuntimeSocket
+
+	// Validate socket path exists
+	if socketPath == "" {
+		slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
+		os.Exit(1)
+	}
+
+	haproxyClient, err := haproxy.NewHAProxyClient(socketPath)
 	if err != nil {
 		// Log fatal here as the client is essential for the server's function
 		slog.Error("Failed to initialize HAProxy client", "error", err)

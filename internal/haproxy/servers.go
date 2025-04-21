@@ -151,3 +151,65 @@ func (c *HAProxyClient) DisableServer(backend, server string) error {
 	slog.Info("Server disabled successfully", "backend", backend, "server", server)
 	return nil
 }
+
+// AddServer adds a new server to a backend dynamically.
+// This uses the Runtime API 'add server' command.
+func (c *HAProxyClient) AddServer(backend, name, addr string, port, weight int) error {
+	slog.Info("Adding server", "backend", backend, "name", name, "addr", addr, "port", port, "weight", weight)
+
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Construct the add server command
+	cmd := fmt.Sprintf("add server %s/%s %s", backend, name, addr)
+
+	// Add port if specified
+	if port > 0 {
+		cmd = fmt.Sprintf("%s:%d", cmd, port)
+	}
+
+	// Add weight if specified
+	if weight > 0 {
+		cmd = fmt.Sprintf("%s weight %d", cmd, weight)
+	}
+
+	// Execute the command
+	_, err = runtimeClient.ExecuteRaw(cmd)
+	if err != nil {
+		slog.Error("Failed to add server", "error", err, "backend", backend, "name", name)
+		return fmt.Errorf("failed to add server %s to backend %s: %w", name, backend, err)
+	}
+
+	slog.Info("Server added successfully", "backend", backend, "name", name)
+	return nil
+}
+
+// DelServer removes a server from a backend dynamically.
+// This uses the Runtime API 'del server' command.
+func (c *HAProxyClient) DelServer(backend, name string) error {
+	slog.Info("Deleting server", "backend", backend, "name", name)
+
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Construct the del server command
+	cmd := fmt.Sprintf("del server %s/%s", backend, name)
+
+	// Execute the command
+	_, err = runtimeClient.ExecuteRaw(cmd)
+	if err != nil {
+		slog.Error("Failed to delete server", "error", err, "backend", backend, "name", name)
+		return fmt.Errorf("failed to delete server %s from backend %s: %w", name, backend, err)
+	}
+
+	slog.Info("Server deleted successfully", "backend", backend, "name", name)
+	return nil
+}

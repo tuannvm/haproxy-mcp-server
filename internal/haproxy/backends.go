@@ -81,3 +81,28 @@ func (c *HAProxyClient) GetBackendDetails(backendName string) (map[string]interf
 	slog.Debug("Successfully retrieved backend details", "backend", backendName)
 	return backendDetails, nil
 }
+
+// SetMaxConnServer sets the maxconn value for a server within a backend.
+func (c *HAProxyClient) SetMaxConnServer(backend, server string, maxconn int) error {
+	slog.Debug("HAProxyClient.SetMaxConnServer called", "backend", backend, "server", server, "maxconn", maxconn)
+
+	// Get the runtime client
+	runtimeClient, err := c.Client.Runtime()
+	if err != nil {
+		slog.Error("Failed to get runtime client", "error", err)
+		return fmt.Errorf("failed to get runtime client: %w", err)
+	}
+
+	// Construct command
+	cmd := fmt.Sprintf("set maxconn server %s/%s %d", backend, server, maxconn)
+
+	// Execute the command
+	_, err = runtimeClient.ExecuteRaw(cmd)
+	if err != nil {
+		slog.Error("Failed to set server maxconn", "error", err, "backend", backend, "server", server)
+		return fmt.Errorf("failed to set maxconn for server %s/%s: %w", backend, server, err)
+	}
+
+	slog.Debug("Successfully set server maxconn", "backend", backend, "server", server, "maxconn", maxconn)
+	return nil
+}
