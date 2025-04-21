@@ -124,69 +124,114 @@ func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 func (c *HAProxyClient) GetStats() (map[string]interface{}, error) {
 	slog.Debug("HAProxyClient.GetStats called")
 
-	// For the stats implementation, we'll use placeholder data
-	// in a real implementation, you would need to:
-	// 1. Get the runtime client
-	// 2. Call appropriate methods to collect stats
-	// 3. Process the results into a structured format
+	// Get native stats directly from the runtime client
+	nativeStats := c.client.GetStats()
+	if nativeStats.Error != "" {
+		slog.Error("Failed to get stats", "error", nativeStats.Error)
+		return nil, fmt.Errorf("failed to get stats: %s", nativeStats.Error)
+	}
 
-	// Create a structured result with realistic data
-	result := map[string]interface{}{
-		"web-backend": map[string]interface{}{
-			"type":             "backend",
-			"status":           "UP",
-			"current_sessions": 42,
-			"max_sessions":     100,
-			"sessions_limit":   2000,
-			"bytes_in":         12345678,
-			"bytes_out":        87654321,
-			"servers": map[string]interface{}{
-				"web-server1": map[string]interface{}{
-					"status":           "UP",
-					"weight":           100,
-					"current_sessions": 15,
-					"check_status":     "L7OK",
-				},
-				"web-server2": map[string]interface{}{
-					"status":           "UP",
-					"weight":           100,
-					"current_sessions": 27,
-					"check_status":     "L7OK",
-				},
-			},
-		},
-		"api-backend": map[string]interface{}{
-			"type":             "backend",
-			"status":           "UP",
-			"current_sessions": 18,
-			"max_sessions":     50,
-			"sessions_limit":   1000,
-			"bytes_in":         2345678,
-			"bytes_out":        7654321,
-			"servers": map[string]interface{}{
-				"api-server1": map[string]interface{}{
-					"status":           "UP",
-					"weight":           100,
-					"current_sessions": 8,
-					"check_status":     "L7OK",
-				},
-				"api-server2": map[string]interface{}{
-					"status":           "UP",
-					"weight":           100,
-					"current_sessions": 10,
-					"check_status":     "L7OK",
-				},
-			},
-		},
-		"web-frontend": map[string]interface{}{
-			"type":             "frontend",
-			"status":           "OPEN",
-			"current_sessions": 60,
-			"max_sessions":     150,
-			"sessions_limit":   3000,
-			"bytes_in":         14345678,
-			"bytes_out":        97654321,
-		},
+	// Build a structured result with real data
+	result := make(map[string]interface{})
+
+	// Group stats by backend/frontend and collect server info
+	backendServers := make(map[string][]map[string]interface{})
+
+	for _, stat := range nativeStats.Stats {
+		if stat.Stats == nil {
+			continue
+		}
+
+		// Create a base stats map for this entry
+		statMap := make(map[string]interface{})
+		statMap["type"] = stat.Type
+
+		// Add key statistics
+		if stat.Stats.Status != "" {
+			statMap["status"] = stat.Stats.Status
+		}
+
+		if stat.Stats.Scur != nil {
+			statMap["current_sessions"] = *stat.Stats.Scur
+		}
+
+		if stat.Stats.Smax != nil {
+			statMap["max_sessions"] = *stat.Stats.Smax
+		}
+
+		if stat.Stats.Slim != nil {
+			statMap["sessions_limit"] = *stat.Stats.Slim
+		}
+
+		if stat.Stats.Bin != nil {
+			statMap["bytes_in"] = *stat.Stats.Bin
+		}
+
+		if stat.Stats.Bout != nil {
+			statMap["bytes_out"] = *stat.Stats.Bout
+		}
+
+		// Add more detailed stats
+		if stat.Stats.Rate != nil {
+			statMap["rate"] = *stat.Stats.Rate
+		}
+
+		if stat.Stats.RateMax != nil {
+			statMap["rate_max"] = *stat.Stats.RateMax
+		}
+
+		if stat.Stats.ConnTot != nil {
+			statMap["connections_total"] = *stat.Stats.ConnTot
+		}
+
+		// Handle different types of stats
+		switch stat.Type {
+		case "frontend":
+			result[stat.Name] = statMap
+		case "backend":
+			// Store the backend stats
+			result[stat.Name] = statMap
+			// Initialize an empty server list for this backend
+			backendServers[stat.Name] = []map[string]interface{}{}
+		case "server":
+			// This is a server entry, add it to the corresponding backend
+			if stat.BackendName != "" {
+				// Create server stats
+				serverMap := make(map[string]interface{})
+				serverMap["name"] = stat.Name
+
+				if stat.Stats.Status != "" {
+					serverMap["status"] = stat.Stats.Status
+				}
+
+				if stat.Stats.Weight != nil {
+					serverMap["weight"] = *stat.Stats.Weight
+				}
+
+				if stat.Stats.Scur != nil {
+					serverMap["current_sessions"] = *stat.Stats.Scur
+				}
+
+				if stat.Stats.CheckStatus != "" {
+					serverMap["check_status"] = stat.Stats.CheckStatus
+				}
+
+				if stat.Stats.Addr != "" {
+					serverMap["address"] = stat.Stats.Addr
+				}
+
+				// Add to the servers list for this backend
+				backendServers[stat.BackendName] = append(backendServers[stat.BackendName], serverMap)
+			}
+		}
+	}
+
+	// Add the server lists to the respective backends
+	for backendName, servers := range backendServers {
+		if backend, exists := result[backendName]; exists {
+			backendMap := backend.(map[string]interface{})
+			backendMap["servers"] = servers
+		}
 	}
 
 	slog.Debug("Successfully retrieved stats", "proxies", len(result))
