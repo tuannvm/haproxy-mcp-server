@@ -11,13 +11,6 @@ import (
 	runtimeoptions "github.com/haproxytech/client-native/v6/runtime/options"
 )
 
-// HAProxyClient provides methods for interacting with HAProxy's Runtime API.
-type HAProxyClient struct {
-	RuntimeAPIURL    string
-	ConfigurationURL string
-	client           runtime.Runtime
-}
-
 // NewHAProxyClient creates a new HAProxyClient using the provided Runtime API endpoint.
 func NewHAProxyClient(runtimeAPIURL, configurationURL string) (*HAProxyClient, error) {
 	slog.Debug("Creating new HAProxy client", "runtimeAPIURL", runtimeAPIURL, "configurationURL", configurationURL)
@@ -65,15 +58,23 @@ func (c *HAProxyClient) Runtime() runtime.Runtime {
 	return c.client
 }
 
-// ExecuteRuntimeCommand executes a raw command on HAProxy's Runtime API.
+// ExecuteRuntimeCommand executes a command on HAProxy's Runtime API and processes the response.
 func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
 	slog.Debug("Executing runtime command", "command", command)
 
-	// Execute command directly on the runtime client
+	// Execute command with raw response, then process it
 	result, err := c.client.ExecuteRaw(command)
 	if err != nil {
 		slog.Error("Failed to execute runtime command", "command", command, "error", err)
 		return "", fmt.Errorf("failed to execute runtime command: %w", err)
+	}
+
+	// Process response to handle error codes returned by HAProxy
+	if len(result) > 4 {
+		switch result[0:4] {
+		case "[3]:", "[2]:", "[1]:", "[0]:":
+			return "", fmt.Errorf("[%c] %s [%s]", result[1], result[4:], command)
+		}
 	}
 
 	slog.Debug("Successfully executed runtime command", "command", command)
@@ -145,52 +146,4 @@ func GetHaproxyAPIEndpoint(socketPath string) (string, error) {
 	slog.Debug("HAProxy API endpoint", "url", apiURL)
 
 	return apiURL, nil
-}
-
-// Methods to support tools.go
-
-// GetBackends returns a list of all HAProxy backends
-func (c *HAProxyClient) GetBackends() ([]string, error) {
-	return c.ListBackends()
-}
-
-// GetBackendDetails retrieves details of a specific backend
-func (c *HAProxyClient) GetBackendDetails(backend string) (map[string]interface{}, error) {
-	backendInfo, err := c.GetBackendInfo(backend)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert BackendInfo to map for tools.go
-	result := map[string]interface{}{
-		"name":     backendInfo.Name,
-		"status":   backendInfo.Status,
-		"sessions": backendInfo.Sessions,
-		"stats":    backendInfo.Stats,
-	}
-
-	// Convert servers to map for consistent interface
-	servers := make([]map[string]interface{}, 0, len(backendInfo.Servers))
-	for _, server := range backendInfo.Servers {
-		serverMap := map[string]interface{}{
-			"name":               server.Name,
-			"address":            server.Address,
-			"port":               server.Port,
-			"status":             server.Status,
-			"weight":             server.Weight,
-			"check_status":       server.CheckStatus,
-			"last_status_change": server.LastStatusChange,
-			"total_connections":  server.TotalConnections,
-			"active_connections": server.ActiveConnections,
-		}
-		servers = append(servers, serverMap)
-	}
-	result["servers"] = servers
-
-	return result, nil
-}
-
-// SetMaxConnServer sets the maximum connections for a server
-func (c *HAProxyClient) SetMaxConnServer(backend, server string, maxconn int) error {
-	return c.SetServerMaxconn(backend, server, maxconn)
 }
