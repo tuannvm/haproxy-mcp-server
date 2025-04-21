@@ -420,7 +420,7 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 
 		slog.InfoContext(ctx, "Executing set_maxconn_server tool", "backend", backend, "server", server, "maxconn", maxconn)
 
-		err := client.SetMaxConnServer(backend, server, maxconn)
+		err := client.SetServerMaxconn(backend, server, maxconn)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to set maxconn", "error", err)
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to set maxconn: %v", err)), nil

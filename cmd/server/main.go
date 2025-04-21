@@ -69,7 +69,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	haproxyClient, err := haproxy.NewHAProxyClient(socketPath)
+	// Get the runtime API URL from the socket path
+	runtimeAPIURL, err := haproxy.GetHaproxyAPIEndpoint(socketPath)
+	if err != nil {
+		slog.Error("Failed to create HAProxy API endpoint", "error", err)
+		os.Exit(1)
+	}
+
+	// Create the HAProxy client with both required parameters
+	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL, "")
 	if err != nil {
 		// Log fatal here as the client is essential for the server's function
 		slog.Error("Failed to initialize HAProxy client", "error", err)
