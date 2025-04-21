@@ -3,8 +3,6 @@ package haproxy
 import (
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 )
 
 // ListBackends returns a list of all HAProxy backends.
@@ -24,28 +22,6 @@ func (c *HAProxyClient) ListBackends() ([]string, error) {
 	return backends, nil
 }
 
-// BackendInfo contains information about a HAProxy backend.
-type BackendInfo struct {
-	Name     string            `json:"name"`
-	Status   string            `json:"status"`
-	Servers  []ServerInfo      `json:"servers,omitempty"`
-	Sessions int               `json:"sessions"`
-	Stats    map[string]string `json:"stats,omitempty"`
-}
-
-// ServerInfo contains information about a HAProxy server.
-type ServerInfo struct {
-	Name              string `json:"name"`
-	Address           string `json:"address"`
-	Port              int    `json:"port,omitempty"`
-	Status            string `json:"status,omitempty"`
-	Weight            int    `json:"weight,omitempty"`
-	CheckStatus       string `json:"check_status,omitempty"`
-	LastStatusChange  string `json:"last_status_change,omitempty"`
-	TotalConnections  int    `json:"total_connections,omitempty"`
-	ActiveConnections int    `json:"active_connections,omitempty"`
-}
-
 // GetBackendInfo returns detailed information about a specific backend.
 func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error) {
 	slog.Debug("Getting backend info", "backend", backendName)
@@ -58,14 +34,11 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 	}
 
 	// Parse the CSV-like output
-	lines := strings.Split(strings.TrimSpace(result), "\n")
-	if len(lines) < 2 {
-		slog.Error("Invalid stats output format", "backend", backendName)
-		return nil, fmt.Errorf("invalid stats output format")
+	_, statsData, err := parseCSVStats(result)
+	if err != nil {
+		slog.Error("Failed to parse stats", "backend", backendName, "error", err)
+		return nil, fmt.Errorf("failed to parse stats: %w", err)
 	}
-
-	// Get headers from first line
-	headers := strings.Split(lines[0], ",")
 
 	// Process data lines
 	backendInfo := &BackendInfo{
@@ -78,18 +51,7 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 	foundBackend := false
 	sessions := 0
 
-	for i := 1; i < len(lines); i++ {
-		data := strings.Split(lines[i], ",")
-		if len(data) < len(headers) {
-			continue // Skip incomplete lines
-		}
-
-		// Create a map of field name to value
-		fieldMap := make(map[string]string)
-		for j := 0; j < len(headers) && j < len(data); j++ {
-			fieldMap[headers[j]] = data[j]
-		}
-
+	for _, fieldMap := range statsData {
 		// Check if this is our backend or a server in our backend
 		pxname, hasPxname := fieldMap["pxname"]
 		svname, hasSvname := fieldMap["svname"]
@@ -113,12 +75,7 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 				backendInfo.Status = status
 			}
 
-			if sessionStr, ok := fieldMap["scur"]; ok {
-				if sess, err := strconv.Atoi(sessionStr); err == nil {
-					sessions = sess
-				}
-			}
-
+			sessions = safeParseInt(fieldMap["scur"], 0)
 			backendInfo.Sessions = sessions
 		} else if svname != "FRONTEND" {
 			// This is a server entry
@@ -128,18 +85,7 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 
 			// Extract server address and port if available
 			if addr, ok := fieldMap["addr"]; ok {
-				server.Address = addr
-
-				// Some versions might include port in the address
-				if strings.Contains(addr, ":") {
-					parts := strings.Split(addr, ":")
-					server.Address = parts[0]
-					if len(parts) > 1 {
-						if port, err := strconv.Atoi(parts[1]); err == nil {
-							server.Port = port
-						}
-					}
-				}
+				server.Address, server.Port = parseAddressPort(addr)
 			}
 
 			// Extract other server info
@@ -147,11 +93,7 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 				server.Status = status
 			}
 
-			if weightStr, ok := fieldMap["weight"]; ok {
-				if weight, err := strconv.Atoi(weightStr); err == nil {
-					server.Weight = weight
-				}
-			}
+			server.Weight = safeParseInt(fieldMap["weight"], 0)
 
 			if checkStatus, ok := fieldMap["check_status"]; ok {
 				server.CheckStatus = checkStatus
@@ -161,17 +103,8 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 				server.LastStatusChange = lastChgStr
 			}
 
-			if connsStr, ok := fieldMap["scur"]; ok {
-				if conns, err := strconv.Atoi(connsStr); err == nil {
-					server.ActiveConnections = conns
-				}
-			}
-
-			if totConnsStr, ok := fieldMap["stot"]; ok {
-				if conns, err := strconv.Atoi(totConnsStr); err == nil {
-					server.TotalConnections = conns
-				}
-			}
+			server.ActiveConnections = safeParseInt(fieldMap["scur"], 0)
+			server.TotalConnections = safeParseInt(fieldMap["stot"], 0)
 
 			backendInfo.Servers = append(backendInfo.Servers, server)
 		}
@@ -242,19 +175,4 @@ func (c *HAProxyClient) DisableBackend(backendName string) error {
 
 	slog.Debug("Successfully disabled backend", "backend", backendName)
 	return nil
-}
-
-// splitAndTrim splits a string by newlines and trims each line, returning only non-empty lines
-func splitAndTrim(s string) []string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	result := make([]string, 0, len(lines))
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
 }

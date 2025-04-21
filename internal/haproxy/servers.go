@@ -3,7 +3,6 @@ package haproxy
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 )
 
 // ListServers retrieves a list of servers for a specific backend.
@@ -61,17 +60,12 @@ func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]int
 	statsOutput, err := c.ExecuteRuntimeCommand(statsCmd)
 	if err == nil && len(statsOutput) > 0 {
 		// Parse stats output for additional details
-		lines := strings.Split(strings.TrimSpace(statsOutput), "\n")
-		if len(lines) >= 2 {
-			// Get headers from first line
-			headers := strings.Split(lines[0], ",")
-			// Get data from second line
-			data := strings.Split(lines[1], ",")
-
-			// Map data to headers
-			for i := 0; i < len(headers) && i < len(data); i++ {
-				if data[i] != "" {
-					details[headers[i]] = data[i]
+		_, statsData, err := parseCSVStats(statsOutput)
+		if err == nil && len(statsData) > 0 {
+			// Add all fields from the first row of stats
+			for key, value := range statsData[0] {
+				if value != "" {
+					details[key] = value
 				}
 			}
 		}
@@ -201,19 +195,11 @@ func (c *HAProxyClient) GetServersState(backend string) ([]map[string]string, er
 		statsOutput, err := c.ExecuteRuntimeCommand(statsCmd)
 		if err == nil && len(statsOutput) > 0 {
 			// Parse stats output for weight
-			lines := strings.Split(strings.TrimSpace(statsOutput), "\n")
-			if len(lines) >= 2 {
-				// Get headers from first line
-				headers := strings.Split(lines[0], ",")
-				// Get data from second line
-				data := strings.Split(lines[1], ",")
-
+			_, statsData, err := parseCSVStats(statsOutput)
+			if err == nil && len(statsData) > 0 {
 				// Look for weight field
-				for i := 0; i < len(headers) && i < len(data); i++ {
-					if headers[i] == "weight" && data[i] != "" {
-						serverMap["weight"] = data[i]
-						break
-					}
+				if weightStr, ok := statsData[0]["weight"]; ok && weightStr != "" {
+					serverMap["weight"] = weightStr
 				}
 			}
 		}
