@@ -7,8 +7,6 @@ import (
 	"log/slog"
 
 	clientnative "github.com/haproxytech/client-native/v6"
-	"github.com/haproxytech/client-native/v6/configuration"
-	configoptions "github.com/haproxytech/client-native/v6/configuration/options"
 	"github.com/haproxytech/client-native/v6/options"
 	"github.com/haproxytech/client-native/v6/runtime"
 	runtimeoptions "github.com/haproxytech/client-native/v6/runtime/options"
@@ -23,30 +21,12 @@ type HAProxyClient struct {
 }
 
 // NewHAProxyClient creates and initializes a new HAProxy client wrapper.
+// This client only uses the HAProxy Runtime API, not the Configuration API.
 func NewHAProxyClient(cfg *config.Config) (*HAProxyClient, error) {
-	slog.Info("Initializing HAProxy client...")
+	slog.Info("Initializing HAProxy client (Runtime API only)...")
 
 	// Create context for initialization
 	ctx := context.Background()
-
-	// Initialize configuration client
-	configOpts := []configoptions.ConfigurationOption{
-		configoptions.ConfigurationFile(cfg.HAProxyConfigFile),
-	}
-
-	if cfg.HAProxyBinaryPath != "" {
-		configOpts = append(configOpts, configoptions.HAProxyBin(cfg.HAProxyBinaryPath))
-	}
-
-	if cfg.HAProxyTransactionDir != "" {
-		configOpts = append(configOpts, configoptions.TransactionsDir(cfg.HAProxyTransactionDir))
-	}
-
-	configClient, err := configuration.New(ctx, configOpts...)
-	if err != nil {
-		slog.Error("Failed to initialize HAProxy configuration client", "error", err)
-		return nil, fmt.Errorf("failed to initialize HAProxy configuration client: %w", err)
-	}
 
 	// Initialize runtime client
 	runtimeOpts := []runtimeoptions.RuntimeOption{
@@ -59,9 +39,8 @@ func NewHAProxyClient(cfg *config.Config) (*HAProxyClient, error) {
 		return nil, fmt.Errorf("failed to initialize HAProxy runtime client: %w", err)
 	}
 
-	// Create top-level client with both components
+	// Create top-level client with only the runtime component
 	clientOpts := []options.Option{
-		options.Configuration(configClient),
 		options.Runtime(runtimeClient),
 	}
 

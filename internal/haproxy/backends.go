@@ -5,11 +5,11 @@ import (
 	"log/slog"
 )
 
-// GetBackends retrieves a list of backend names.
+// GetBackends retrieves a list of all backends from HAProxy.
 func (c *HAProxyClient) GetBackends() ([]string, error) {
 	slog.Debug("HAProxyClient.GetBackends called")
 
-	// Get the configuration client
+	// Get the configuration client to retrieve backends
 	configClient, err := c.Client.Configuration()
 	if err != nil {
 		slog.Error("Failed to get configuration client", "error", err)
@@ -17,14 +17,14 @@ func (c *HAProxyClient) GetBackends() ([]string, error) {
 	}
 
 	// GetBackends takes a transaction ID (empty string for no transaction)
-	// and returns: version, backends, error
+	// and returns: version string, backends array, error
 	_, backends, err := configClient.GetBackends("")
 	if err != nil {
-		slog.Error("Failed to get backends from HAProxy", "error", err)
-		return nil, fmt.Errorf("failed to get backends from HAProxy: %w", err)
+		slog.Error("Failed to get backends", "error", err)
+		return nil, fmt.Errorf("failed to list backends: %w", err)
 	}
 
-	// Extract backend names
+	// Process the backends data
 	backendNames := make([]string, 0, len(backends))
 	for _, backend := range backends {
 		backendNames = append(backendNames, backend.Name)
@@ -34,52 +34,50 @@ func (c *HAProxyClient) GetBackends() ([]string, error) {
 	return backendNames, nil
 }
 
-// GetBackendDetails gets detailed information about a specific backend.
-func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, error) {
-	slog.Debug("HAProxyClient.GetBackendDetails called", "backend", name)
+// GetBackendDetails retrieves detailed information about a specific backend.
+func (c *HAProxyClient) GetBackendDetails(backendName string) (map[string]interface{}, error) {
+	slog.Debug("HAProxyClient.GetBackendDetails called", "backend", backendName)
 
-	// Get the configuration client
+	// First verify the backend exists
 	configClient, err := c.Client.Configuration()
 	if err != nil {
 		slog.Error("Failed to get configuration client", "error", err)
 		return nil, fmt.Errorf("failed to get configuration client: %w", err)
 	}
 
-	// GetBackend takes backend name and transaction ID (empty string for no transaction)
-	// and returns: version, backend, error
-	_, backend, err := configClient.GetBackend(name, "")
+	// Check if backend exists with GetBackend
+	_, backend, err := configClient.GetBackend(backendName, "")
 	if err != nil {
-		slog.Error("Failed to get backend details", "backend", name, "error", err)
-		return nil, fmt.Errorf("failed to get backend %s details: %w", name, err)
+		slog.Error("Backend not found", "backend", backendName, "error", err)
+		return nil, fmt.Errorf("backend '%s' not found: %w", backendName, err)
 	}
 
-	// Convert to a map for JSON serialization
-	details := map[string]interface{}{
+	// Create backend details from configuration
+	backendDetails := map[string]interface{}{
 		"name": backend.Name,
-		"mode": backend.Mode,
 	}
 
-	// Add non-empty fields if available
-	if backend.Balance != nil && backend.Balance.Algorithm != nil {
-		details["balance"] = *backend.Balance.Algorithm
+	// Add optional fields if available
+	if backend.Mode != "" {
+		backendDetails["mode"] = backend.Mode
 	}
 
-	if backend.Cookie != nil {
-		details["cookie"] = backend.Cookie
+	if backend.Balance != nil && backend.Balance.Algorithm != nil && *backend.Balance.Algorithm != "" {
+		backendDetails["balance"] = *backend.Balance.Algorithm
 	}
 
-	// HTTPCheck is not directly available in Backend model
-	// Check for httpchk in advCheck field
-	if backend.AdvCheck == "httpchk" {
-		details["http_check"] = true
+	// Try to get additional stats from our GetStats method
+	stats, err := c.GetStats()
+	if err == nil {
+		// Check if backend has stats in our implementation
+		if backendStats, ok := stats[backendName].(map[string]interface{}); ok {
+			// Merge stats into details
+			for k, v := range backendStats {
+				backendDetails[k] = v
+			}
+		}
 	}
 
-	// Get servers in this backend
-	servers, err := c.ListServers(name)
-	if err == nil && len(servers) > 0 {
-		details["servers"] = servers
-	}
-
-	slog.Debug("Successfully retrieved backend details", "backend", name)
-	return details, nil
+	slog.Debug("Successfully retrieved backend details", "backend", backendName)
+	return backendDetails, nil
 }

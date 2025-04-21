@@ -85,41 +85,13 @@ func (c *HAProxyClient) ReloadHAProxy() error {
 	}
 
 	// Try to reload HAProxy via the socket
-	// The runtime.Reload() method returns (string, error)
 	result, err := runtimeClient.Reload()
 	if err != nil {
 		slog.Error("Failed to reload HAProxy via socket", "error", err)
 
-		// If socket reload fails, try via configuration client
-		configClient, err := c.Client.Configuration()
-		if err != nil {
-			slog.Error("Failed to get configuration client", "error", err)
-			return fmt.Errorf("failed to get configuration client after socket reload failed: %w", err)
-		}
-
-		// Get current version
-		version, err := configClient.GetVersion("")
-		if err != nil {
-			slog.Error("Failed to get configuration version", "error", err)
-			return fmt.Errorf("failed to get configuration version: %w", err)
-		}
-
-		// Start a transaction
-		transaction, err := configClient.StartTransaction(version)
-		if err != nil {
-			slog.Error("Failed to start transaction", "error", err)
-			return fmt.Errorf("failed to start transaction: %w", err)
-		}
-
-		// Commit the transaction to trigger a reload
-		_, err = configClient.CommitTransaction(transaction.ID)
-		if err != nil {
-			slog.Error("Failed to commit transaction", "transaction", transaction.ID, "error", err)
-			return fmt.Errorf("failed to commit transaction for reload: %w", err)
-		}
-
-		slog.Info("HAProxy reloaded via configuration commit")
-		return nil
+		// If the runtime reload fails, log and return the error
+		// In strict Runtime API mode, we shouldn't try configuration reload
+		return fmt.Errorf("failed to reload HAProxy via runtime API: %w", err)
 	}
 
 	slog.Info("HAProxy reloaded via socket", "result", result)

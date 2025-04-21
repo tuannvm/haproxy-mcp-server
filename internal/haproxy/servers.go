@@ -10,6 +10,8 @@ func (c *HAProxyClient) ListServers(backend string) ([]string, error) {
 	slog.Debug("HAProxyClient.ListServers called", "backend", backend)
 
 	// Get the configuration client
+	// Note: We need to use the configuration API here since the runtime API
+	// doesn't provide a direct way to just list server names
 	configClient, err := c.Client.Configuration()
 	if err != nil {
 		slog.Error("Failed to get configuration client", "error", err)

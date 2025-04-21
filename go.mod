@@ -5,7 +5,6 @@ go 1.24.2
 require (
 	github.com/haproxytech/client-native/v6 v6.1.5
 	github.com/mark3labs/mcp-go v0.22.0
-	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.20.1
 )
 
@@ -29,8 +28,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
