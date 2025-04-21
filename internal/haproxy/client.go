@@ -1,298 +1,408 @@
-// Package haproxy provides a client for interacting with HAProxy's Runtime API.
 package haproxy
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/url"
-	"os/exec"
 	"strings"
-	"time"
+
+	runtimeclient "github.com/tuannvm/haproxy-mcp-server/internal/haproxy/runtime"
+	statsclient "github.com/tuannvm/haproxy-mcp-server/internal/haproxy/stats"
 )
 
-// NewHAProxyClient creates a new HAProxy client
-func NewHAProxyClient(runtimeAPIURL string) (*HAProxyClient, error) {
-	// Parse URL to determine connection type
-	u, err := url.Parse(runtimeAPIURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse runtime API URL: %w", err)
-	}
+// HAProxyClient is a combined client that can interact with HAProxy through both runtime API and stats API
+type HAProxyClient struct {
+	RuntimeClient *runtimeclient.HAProxyClient
+	StatsClient   *statsclient.StatsClient
+	StatsURL      string
+}
 
-	// Validate URL scheme
-	switch u.Scheme {
-	case "unix":
-		slog.Debug("Initializing client for Unix socket connection", "path", u.Path)
-	case "tcp":
-		slog.Debug("Initializing client for TCP connection", "host", u.Host)
-	default:
-		return nil, fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
-	}
-
+// NewHAProxyClient creates a new HAProxy client using the provided configurations
+func NewHAProxyClient(runtimeAPIURL string, statsURL string) (*HAProxyClient, error) {
 	client := &HAProxyClient{
-		RuntimeAPIURL: runtimeAPIURL,
-		ParsedURL:     u,
-		Mode:          ClientModeDirect,
+		StatsURL: statsURL,
 	}
 
-	// Test direct connection by executing a simple command
-	_, err = client.ExecuteRuntimeCommand("show info")
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to HAProxy Runtime API: %w", err)
+	// Initialize runtime client if URL is provided
+	if runtimeAPIURL != "" {
+		slog.Info("Initializing HAProxy Runtime API client", "url", runtimeAPIURL)
+		runtimeClient, err := runtimeclient.NewHAProxyClient(runtimeAPIURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize HAProxy Runtime API client: %w", err)
+		}
+		client.RuntimeClient = runtimeClient
+		slog.Info("HAProxy Runtime API client initialized successfully")
 	}
 
-	slog.Info("Successfully connected to HAProxy Runtime API", "url", runtimeAPIURL, "mode", client.Mode)
+	// Initialize stats client if URL is provided
+	if statsURL != "" {
+		slog.Info("Initializing HAProxy Stats client", "url", statsURL)
+		statsClient, err := statsclient.NewStatsClient(statsURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize HAProxy Stats client: %w", err)
+		}
+		client.StatsClient = statsClient
+		slog.Info("HAProxy Stats client initialized successfully")
+	}
+
+	// Ensure at least one client is initialized
+	if client.RuntimeClient == nil && client.StatsClient == nil {
+		return nil, fmt.Errorf("at least one of Runtime API URL or Stats URL must be provided")
+	}
 
 	return client, nil
 }
 
-// executeDirectCommand executes a command directly via TCP or Unix socket
-func (c *HAProxyClient) executeDirectCommand(command string) (string, error) {
-	if c.ParsedURL.Scheme == "tcp" {
-		return c.executeDirectTCPCommand(command)
-	} else {
-		return c.executeDirectUnixCommand(command)
-	}
-}
-
-// executeDirectTCPCommand executes a command directly via TCP
-func (c *HAProxyClient) executeDirectTCPCommand(command string) (string, error) {
-	slog.Debug("Executing direct TCP command", "host", c.ParsedURL.Host, "command", command)
-
-	// Try TCP connection
-	slog.Debug("Attempting direct TCP connection to HAProxy", "address", c.ParsedURL.Host)
-	conn, err := net.DialTimeout("tcp", c.ParsedURL.Host, 5*time.Second)
-	if err != nil {
-		slog.Debug("Direct TCP connection failed, trying socat instead", "error", err)
-		// Try using socat if direct connection fails
-		return c.executeSocatTCPCommand(command)
-	}
-	defer func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			slog.Error("Error closing TCP connection", "error", closeErr)
-		}
-	}()
-	slog.Debug("Successfully established TCP connection to HAProxy")
-
-	// Set deadlines
-	err = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		slog.Error("Failed to set deadline on TCP connection", "error", err)
-		return "", fmt.Errorf("failed to set deadline: %w", err)
-	}
-
-	// Send command
-	slog.Debug("Sending command to HAProxy", "command", command)
-	_, err = conn.Write([]byte(command + "\n"))
-	if err != nil {
-		slog.Error("Failed to send command to HAProxy", "error", err)
-		return "", fmt.Errorf("failed to send command: %w", err)
-	}
-
-	// Read response
-	buf := make([]byte, 4096)
-	slog.Debug("Reading response from HAProxy")
-	n, err := conn.Read(buf)
-	if err != nil {
-		slog.Error("Failed to read response from HAProxy", "error", err)
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	response := string(buf[:n])
-	slog.Debug("Received response from HAProxy", "response_length", len(response))
-	return response, nil
-}
-
-// executeDirectUnixCommand executes a command directly via Unix socket
-func (c *HAProxyClient) executeDirectUnixCommand(command string) (string, error) {
-	slog.Debug("Executing direct Unix command", "socket", c.ParsedURL.Path, "command", command)
-
-	// Try Unix socket connection
-	conn, err := net.DialTimeout("unix", c.ParsedURL.Path, 5*time.Second)
-	if err != nil {
-		// Try using socat if direct connection fails
-		return c.executeSocatUnixCommand(command)
-	}
-	defer func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			slog.Error("Error closing Unix socket connection", "error", closeErr)
-		}
-	}()
-
-	// Set deadlines
-	err = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		return "", fmt.Errorf("failed to set deadline: %w", err)
-	}
-
-	// Send command
-	_, err = conn.Write([]byte(command + "\n"))
-	if err != nil {
-		return "", fmt.Errorf("failed to send command: %w", err)
-	}
-
-	// Read response
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	return string(buf[:n]), nil
-}
-
-// executeSocatTCPCommand executes a command via socat over TCP
-func (c *HAProxyClient) executeSocatTCPCommand(command string) (string, error) {
-	slog.Debug("Executing socat TCP command", "host", c.ParsedURL.Host, "command", command)
-
-	// Check if socat is available
-	socatPath, err := exec.LookPath("socat")
-	if err != nil {
-		slog.Error("Socat not found in system PATH", "error", err)
-		return "", fmt.Errorf("socat not found: %w", err)
-	}
-	slog.Debug("Found socat binary", "path", socatPath)
-
-	// Prepare socat command args
-	socatTarget := fmt.Sprintf("tcp-connect:%s", c.ParsedURL.Host)
-	slog.Debug("Preparing socat command", "target", socatTarget)
-
-	// Execute command with socat
-	cmd := exec.Command(socatPath, socatTarget, "stdio")
-	cmd.Stdin = bytes.NewBufferString(command + "\n")
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	var errOut bytes.Buffer
-	cmd.Stderr = &errOut
-
-	slog.Debug("Running socat command", "full_command", fmt.Sprintf("%s %s stdio", socatPath, socatTarget))
-	err = cmd.Run()
-	if err != nil {
-		stderr := errOut.String()
-		slog.Error("Socat command failed", "error", err, "stderr", stderr)
-		return "", fmt.Errorf("socat command failed: %w, stderr: %s", err, stderr)
-	}
-
-	response := out.String()
-	slog.Debug("Socat command successful", "response_length", len(response))
-	return response, nil
-}
-
-// executeSocatUnixCommand executes a command via socat over Unix socket
-func (c *HAProxyClient) executeSocatUnixCommand(command string) (string, error) {
-	slog.Debug("Executing socat Unix command", "socket", c.ParsedURL.Path, "command", command)
-
-	// Check if socat is available
-	socatPath, err := exec.LookPath("socat")
-	if err != nil {
-		return "", fmt.Errorf("socat not found: %w", err)
-	}
-
-	// Execute command with socat
-	cmd := exec.Command(socatPath, fmt.Sprintf("unix-connect:%s", c.ParsedURL.Path), "stdio")
-	cmd.Stdin = bytes.NewBufferString(command + "\n")
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	var errOut bytes.Buffer
-	cmd.Stderr = &errOut
-
-	err = cmd.Run()
-	if err != nil {
-		return "", fmt.Errorf("socat command failed: %w, stderr: %s", err, errOut.String())
-	}
-
-	return out.String(), nil
-}
-
-// ExecuteRuntimeCommand executes a command on HAProxy's Runtime API and processes the response.
-func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
-	slog.Debug("Executing runtime command", "command", command)
-
-	// Only use direct connection
-	result, err := c.executeDirectCommand(command)
-	if err != nil {
-		slog.Error("Failed to execute runtime command", "command", command, "error", err)
-		return "", fmt.Errorf("failed to execute runtime command: %w", err)
-	}
-
-	// Process response to handle error codes returned by HAProxy
-	if len(result) > 4 {
-		switch result[0:4] {
-		case "[3]:", "[2]:", "[1]:", "[0]:":
-			return "", fmt.Errorf("[%c] %s [%s]", result[1], result[4:], command)
-		}
-	}
-
-	slog.Debug("Successfully executed runtime command", "command", command)
-	return result, nil
-}
-
-// GetProcessInfo retrieves information about the HAProxy process.
-// This is refactored to use direct command execution rather than client-native.
-func (c *HAProxyClient) GetProcessInfo() (map[string]string, error) {
-	slog.Debug("Getting HAProxy process info")
-
-	// Execute the 'show info' command directly
-	result, err := c.ExecuteRuntimeCommand("show info")
-	if err != nil {
-		slog.Error("Failed to get process info", "error", err)
-		return nil, fmt.Errorf("failed to get process info: %w", err)
-	}
-
-	// Parse the result into a map
-	infoMap := make(map[string]string)
-	lines := strings.Split(strings.TrimSpace(result), "\n")
-
-	for _, line := range lines {
-		// Skip empty lines
-		if line == "" {
-			continue
-		}
-
-		// Split each line by colon to get key-value pairs
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			infoMap[key] = value
-		}
-	}
-
-	// Add HAProxy name (not directly available from API)
-	infoMap["name"] = "HAProxy"
-
-	slog.Debug("Successfully retrieved HAProxy process info")
-	return infoMap, nil
-}
-
-// Close closes the HAProxy client connection.
+// Close closes both runtime and stats client connections
 func (c *HAProxyClient) Close() error {
-	slog.Debug("Closing HAProxy client")
+	if c.RuntimeClient != nil {
+		if err := c.RuntimeClient.Close(); err != nil {
+			slog.Error("Error closing runtime client", "error", err)
+		}
+	}
+
 	return nil
 }
 
-// GetHaproxyAPIEndpoint returns the URL for the HAProxy API from socket path.
-// This is a utility function for clients that need the API URL.
-func GetHaproxyAPIEndpoint(socketPath string) (string, error) {
-	slog.Debug("Getting HAProxy API endpoint", "socketPath", socketPath)
+// ExecuteRuntimeCommand executes a command on HAProxy's Runtime API
+func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
+	if c.RuntimeClient == nil {
+		return "", fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.ExecuteRuntimeCommand(command)
+}
 
-	// Validate socket path
-	if socketPath == "" {
-		return "", fmt.Errorf("HAProxy socket path is empty")
+// GetRuntimeInfo retrieves HAProxy process information from runtime API
+func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.GetProcessInfo()
+}
+
+// GetStats retrieves HAProxy statistics from stats page
+func (c *HAProxyClient) GetStats() (*statsclient.HAProxyStats, error) {
+	if c.StatsClient == nil {
+		return nil, fmt.Errorf("stats client is not initialized")
+	}
+	return c.StatsClient.GetStats()
+}
+
+// GetBackends returns a list of all backends
+func (c *HAProxyClient) GetBackends() ([]string, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.ListBackends()
+}
+
+// GetBackendDetails returns detailed information about a backend
+func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+	info, err := c.RuntimeClient.GetBackendInfo(name)
+	if err != nil {
+		return nil, err
 	}
 
-	// Create a URL with unix socket protocol using the socket path
-	u := &url.URL{
-		Scheme: "unix",
-		Path:   socketPath,
+	// Convert to map format - handle correctly based on GetBackendInfo return type
+	result := make(map[string]interface{})
+	// Conversion logic depends on actual return type of GetBackendInfo
+	// This is a simplified approach
+	result["name"] = name
+	result["info"] = info
+
+	return result, nil
+}
+
+// ListServers returns a list of servers for a backend
+func (c *HAProxyClient) ListServers(backend string) ([]string, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.ListServers(backend)
+}
+
+// GetServerDetails returns detailed information about a server
+func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]interface{}, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+	serverInfo, err := c.RuntimeClient.GetServerDetails(backend, server)
+	if err != nil {
+		return nil, err
 	}
 
-	// Create the API URL
-	apiURL := fmt.Sprintf("%s/v2", u)
-	slog.Debug("HAProxy API endpoint", "url", apiURL)
+	// Convert to map format directly based on the returned structure
+	// This assumes the runtime client returns a map[string]interface{}
+	return serverInfo, nil
+}
 
-	return apiURL, nil
+// EnableServer enables a server in a backend
+func (c *HAProxyClient) EnableServer(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.EnableServer(backend, server)
+}
+
+// DisableServer disables a server in a backend
+func (c *HAProxyClient) DisableServer(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.DisableServer(backend, server)
+}
+
+// SetWeight sets the weight for a server in a backend
+func (c *HAProxyClient) SetWeight(backend, server string, weight int) (string, error) {
+	if c.RuntimeClient == nil {
+		return "", fmt.Errorf("runtime client is not initialized")
+	}
+
+	// Directly execute the command since it might be different across versions
+	cmd := fmt.Sprintf("set weight %s/%s %d", backend, server, weight)
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Weight for %s/%s set to %d", backend, server, weight), nil
+}
+
+// SetServerMaxconn sets the maximum connections for a server
+func (c *HAProxyClient) SetServerMaxconn(backend, server string, maxconn int) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	return c.RuntimeClient.SetServerMaxconn(backend, server, maxconn)
+}
+
+// EnableHealth enables health checks for a server
+func (c *HAProxyClient) EnableHealth(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	// Use the correct method in the runtime client
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("enable health %s/%s", backend, server))
+	return err
+}
+
+// DisableHealth disables health checks for a server
+func (c *HAProxyClient) DisableHealth(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	// Use the correct method in the runtime client
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("disable health %s/%s", backend, server))
+	return err
+}
+
+// EnableAgent enables agent checks for a server
+func (c *HAProxyClient) EnableAgent(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	// Use the correct method in the runtime client
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("enable agent %s/%s", backend, server))
+	return err
+}
+
+// DisableAgent disables agent checks for a server
+func (c *HAProxyClient) DisableAgent(backend, server string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	// Use the correct method in the runtime client
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("disable agent %s/%s", backend, server))
+	return err
+}
+
+// ShowStat executes the show stat command
+func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
+	// Try stats client first if available
+	if c.StatsClient != nil {
+		stats, err := c.StatsClient.GetStats()
+		if err == nil {
+			result := []map[string]string{}
+			for _, item := range stats.Stats {
+				if filter == "" || strings.Contains(item.PxName, filter) || strings.Contains(item.SvName, filter) {
+					row := map[string]string{
+						"pxname": item.PxName,
+						"svname": item.SvName,
+						"status": item.Status,
+						"weight": fmt.Sprintf("%d", item.Weight),
+					}
+					result = append(result, row)
+				}
+			}
+			return result, nil
+		}
+		// Fall back to runtime client if stats client failed
+		slog.Warn("Stats client failed, falling back to runtime client", "error", err)
+	}
+
+	// Use runtime client as fallback or primary if stats client not available
+	if c.RuntimeClient != nil {
+		cmd := "show stat"
+		if filter != "" {
+			cmd = fmt.Sprintf("%s %s", cmd, filter)
+		}
+		response, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse CSV-like output (simplified implementation)
+		result := []map[string]string{}
+		lines := strings.Split(response, "\n")
+		if len(lines) > 0 {
+			headers := strings.Split(lines[0], ",")
+			for i := 1; i < len(lines); i++ {
+				if lines[i] == "" {
+					continue
+				}
+				values := strings.Split(lines[i], ",")
+				row := make(map[string]string)
+				for j := 0; j < len(headers) && j < len(values); j++ {
+					row[headers[j]] = values[j]
+				}
+				result = append(result, row)
+			}
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("neither stats client nor runtime client is initialized")
+}
+
+// ShowServersState returns server state information
+func (c *HAProxyClient) ShowServersState(backend string) ([]map[string]string, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+
+	cmd := "show servers state"
+	if backend != "" {
+		cmd = fmt.Sprintf("%s %s", cmd, backend)
+	}
+
+	response, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse output (simplified implementation)
+	result := []map[string]string{}
+	lines := strings.Split(response, "\n")
+	if len(lines) > 0 {
+		headers := strings.Fields(lines[0])
+		for i := 1; i < len(lines); i++ {
+			if lines[i] == "" {
+				continue
+			}
+			values := strings.Fields(lines[i])
+			row := make(map[string]string)
+			for j := 0; j < len(headers) && j < len(values); j++ {
+				row[headers[j]] = values[j]
+			}
+			result = append(result, row)
+		}
+	}
+
+	return result, nil
+}
+
+// Other methods like DumpStatsFile, DebugCounters, etc. would be added here
+// to support the full tool set in tools.go
+
+// DumpStatsFile dumps stats to a file
+func (c *HAProxyClient) DumpStatsFile(filepath string) (string, error) {
+	if c.RuntimeClient == nil {
+		return "", fmt.Errorf("runtime client is not initialized")
+	}
+
+	cmd := fmt.Sprintf("show stat > %s", filepath)
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath, nil
+}
+
+// DebugCounters returns debug counters
+func (c *HAProxyClient) DebugCounters() (map[string]interface{}, error) {
+	if c.RuntimeClient == nil {
+		return nil, fmt.Errorf("runtime client is not initialized")
+	}
+
+	response, err := c.RuntimeClient.ExecuteRuntimeCommand("debug dev state")
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse output into structured format
+	counters := make(map[string]interface{})
+	lines := strings.Split(response, "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			counters[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+
+	return counters, nil
+}
+
+// ClearCountersAll clears all counters
+func (c *HAProxyClient) ClearCountersAll() error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand("clear counters all")
+	return err
+}
+
+// AddServer adds a server to a backend
+func (c *HAProxyClient) AddServer(backend, name, addr string, port, weight int) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+
+	cmd := fmt.Sprintf("add server %s/%s %s", backend, name, addr)
+	if port > 0 {
+		cmd = fmt.Sprintf("%s:%d", cmd, port)
+	}
+	if weight > 0 {
+		cmd = fmt.Sprintf("%s weight %d", cmd, weight)
+	}
+
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+	return err
+}
+
+// DelServer removes a server from a backend
+func (c *HAProxyClient) DelServer(backend, name string) error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+
+	cmd := fmt.Sprintf("del server %s/%s", backend, name)
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand(cmd)
+	return err
+}
+
+// ReloadHAProxy reloads the HAProxy configuration
+func (c *HAProxyClient) ReloadHAProxy() error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+
+	// Note: This is a simplified implementation
+	// In a real-world scenario, this would likely call a system command
+	// to trigger a reload of HAProxy
+	_, err := c.RuntimeClient.ExecuteRuntimeCommand("reload")
+	return err
 }

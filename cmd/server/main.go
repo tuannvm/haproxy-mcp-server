@@ -60,48 +60,74 @@ func main() {
 	slog.Info("Starting HAProxy MCP Server...")
 	slog.Info("Loaded configuration", "config", cfg)
 
-	// --- HAProxy Client ---
+	// --- HAProxy Runtime API Client ---
 	var runtimeAPIURL string
 
-	// Handle connection based on runtime mode
-	switch cfg.HAProxyRuntimeMode {
-	case "unix":
-		// Unix socket mode
-		if cfg.HAProxyRuntimeSocket == "" {
-			slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
-			os.Exit(1)
-		}
+	// Use direct URL if provided, otherwise construct from components
+	if cfg.HAProxyRuntimeURL != "" {
+		runtimeAPIURL = cfg.HAProxyRuntimeURL
+	} else {
+		// Handle connection based on runtime mode
+		switch cfg.HAProxyRuntimeMode {
+		case "unix":
+			// Unix socket mode
+			if cfg.HAProxyRuntimeSocket == "" {
+				slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
+				os.Exit(1)
+			}
 
-		// Create a URL with unix socket protocol
-		u := &url.URL{
-			Scheme: "unix",
-			Path:   cfg.HAProxyRuntimeSocket,
-		}
-		runtimeAPIURL = u.String()
+			// Create a URL with unix socket protocol
+			u := &url.URL{
+				Scheme: "unix",
+				Path:   cfg.HAProxyRuntimeSocket,
+			}
+			runtimeAPIURL = u.String()
 
-	case "tcp4":
-		// TCP4 mode
-		if cfg.HAProxyHost == "" {
-			slog.Error("HAProxy host is empty. Please set HAPROXY_HOST env variable.")
-			os.Exit(1)
-		}
+		case "tcp4":
+			// TCP4 mode
+			if cfg.HAProxyHost == "" {
+				slog.Error("HAProxy host is empty. Please set HAPROXY_HOST env variable.")
+				os.Exit(1)
+			}
 
-		// Create a TCP URL
-		u := &url.URL{
-			Scheme: "tcp",
-			Host:   fmt.Sprintf("%s:%d", cfg.HAProxyHost, cfg.HAProxyPort),
-		}
-		runtimeAPIURL = u.String()
+			// Create a TCP URL
+			u := &url.URL{
+				Scheme: "tcp",
+				Host:   fmt.Sprintf("%s:%d", cfg.HAProxyHost, cfg.HAProxyPort),
+			}
+			runtimeAPIURL = u.String()
 
-	default:
-		slog.Error("Invalid HAProxy runtime mode", "mode", cfg.HAProxyRuntimeMode)
+		default:
+			if cfg.HAProxyStatsEnabled && cfg.HAProxyStatsURL != "" {
+				slog.Warn("Invalid HAProxy runtime mode, but stats API is enabled. Continuing with stats only.",
+					"mode", cfg.HAProxyRuntimeMode)
+				runtimeAPIURL = ""
+			} else {
+				slog.Error("Invalid HAProxy runtime mode and no stats API configured", "mode", cfg.HAProxyRuntimeMode)
+				os.Exit(1)
+			}
+		}
+	}
+
+	// --- HAProxy Stats Client ---
+	var statsURL string
+	if cfg.HAProxyStatsEnabled && cfg.HAProxyStatsURL != "" {
+		statsURL = cfg.HAProxyStatsURL
+		slog.Info("HAProxy Stats API enabled", "url", statsURL)
+	} else {
+		slog.Info("HAProxy Stats API disabled")
+	}
+
+	// Ensure at least one API is configured
+	if runtimeAPIURL == "" && statsURL == "" {
+		slog.Error("Neither HAProxy Runtime API nor Stats API is configured")
 		os.Exit(1)
 	}
 
-	slog.Info("Connecting to HAProxy", "runtimeAPIURL", runtimeAPIURL)
+	slog.Info("Connecting to HAProxy", "runtimeAPIURL", runtimeAPIURL, "statsURL", statsURL)
 
-	// Create the HAProxy client with the appropriate runtime API URL
-	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL)
+	// Create the HAProxy client with the appropriate URLs
+	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL, statsURL)
 	if err != nil {
 		// Log fatal here as the client is essential for the server's function
 		slog.Error("Failed to initialize HAProxy client", "error", err)
