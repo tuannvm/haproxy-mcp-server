@@ -3,106 +3,258 @@ package haproxy
 import (
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 )
 
-// GetBackends retrieves a list of all backends from HAProxy.
-func (c *HAProxyClient) GetBackends() ([]string, error) {
-	slog.Debug("HAProxyClient.GetBackends called")
+// ListBackends returns a list of all HAProxy backends.
+func (c *HAProxyClient) ListBackends() ([]string, error) {
+	slog.Debug("Listing all HAProxy backends")
 
-	// Get the configuration client to retrieve backends
-	configClient, err := c.Client.Configuration()
+	// Get backends by executing a simple command
+	result, err := c.client.ExecuteRaw("show backends")
 	if err != nil {
-		slog.Error("Failed to get configuration client", "error", err)
-		return nil, fmt.Errorf("failed to get configuration client: %w", err)
-	}
-
-	// GetBackends takes a transaction ID (empty string for no transaction)
-	// and returns: version string, backends array, error
-	_, backends, err := configClient.GetBackends("")
-	if err != nil {
-		slog.Error("Failed to get backends", "error", err)
+		slog.Error("Failed to list backends", "error", err)
 		return nil, fmt.Errorf("failed to list backends: %w", err)
 	}
 
-	// Process the backends data
-	backendNames := make([]string, 0, len(backends))
-	for _, backend := range backends {
-		backendNames = append(backendNames, backend.Name)
-	}
-
-	slog.Debug("Successfully retrieved backends", "count", len(backendNames))
-	return backendNames, nil
+	// Split the result by newlines to get backend names
+	backends := splitAndTrim(result)
+	slog.Debug("Successfully listed backends", "count", len(backends))
+	return backends, nil
 }
 
-// GetBackendDetails retrieves detailed information about a specific backend.
-func (c *HAProxyClient) GetBackendDetails(backendName string) (map[string]interface{}, error) {
-	slog.Debug("HAProxyClient.GetBackendDetails called", "backend", backendName)
+// BackendInfo contains information about a HAProxy backend.
+type BackendInfo struct {
+	Name     string            `json:"name"`
+	Status   string            `json:"status"`
+	Servers  []ServerInfo      `json:"servers,omitempty"`
+	Sessions int               `json:"sessions"`
+	Stats    map[string]string `json:"stats,omitempty"`
+}
 
-	// First verify the backend exists
-	configClient, err := c.Client.Configuration()
+// ServerInfo contains information about a HAProxy server.
+type ServerInfo struct {
+	Name              string `json:"name"`
+	Address           string `json:"address"`
+	Port              int    `json:"port,omitempty"`
+	Status            string `json:"status,omitempty"`
+	Weight            int    `json:"weight,omitempty"`
+	CheckStatus       string `json:"check_status,omitempty"`
+	LastStatusChange  string `json:"last_status_change,omitempty"`
+	TotalConnections  int    `json:"total_connections,omitempty"`
+	ActiveConnections int    `json:"active_connections,omitempty"`
+}
+
+// GetBackendInfo returns detailed information about a specific backend.
+func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error) {
+	slog.Debug("Getting backend info", "backend", backendName)
+
+	// Get stats for this backend
+	result, err := c.ExecuteRuntimeCommand("show stat")
 	if err != nil {
-		slog.Error("Failed to get configuration client", "error", err)
-		return nil, fmt.Errorf("failed to get configuration client: %w", err)
+		slog.Error("Failed to get backend stats", "backend", backendName, "error", err)
+		return nil, fmt.Errorf("failed to get backend stats: %w", err)
 	}
 
-	// Check if backend exists with GetBackend
-	_, backend, err := configClient.GetBackend(backendName, "")
-	if err != nil {
-		slog.Error("Backend not found", "backend", backendName, "error", err)
-		return nil, fmt.Errorf("backend '%s' not found: %w", backendName, err)
+	// Parse the CSV-like output
+	lines := strings.Split(strings.TrimSpace(result), "\n")
+	if len(lines) < 2 {
+		slog.Error("Invalid stats output format", "backend", backendName)
+		return nil, fmt.Errorf("invalid stats output format")
 	}
 
-	// Create backend details from configuration
-	backendDetails := map[string]interface{}{
-		"name": backend.Name,
+	// Get headers from first line
+	headers := strings.Split(lines[0], ",")
+
+	// Process data lines
+	backendInfo := &BackendInfo{
+		Name:    backendName,
+		Status:  "UNKNOWN", // Default status
+		Servers: []ServerInfo{},
+		Stats:   make(map[string]string),
 	}
 
-	// Add optional fields if available
-	if backend.Mode != "" {
-		backendDetails["mode"] = backend.Mode
-	}
+	foundBackend := false
+	sessions := 0
 
-	if backend.Balance != nil && backend.Balance.Algorithm != nil && *backend.Balance.Algorithm != "" {
-		backendDetails["balance"] = *backend.Balance.Algorithm
-	}
+	for i := 1; i < len(lines); i++ {
+		data := strings.Split(lines[i], ",")
+		if len(data) < len(headers) {
+			continue // Skip incomplete lines
+		}
 
-	// Try to get additional stats from our GetStats method
-	stats, err := c.GetStats()
-	if err == nil {
-		// Check if backend has stats in our implementation
-		if backendStats, ok := stats[backendName].(map[string]interface{}); ok {
-			// Merge stats into details
-			for k, v := range backendStats {
-				backendDetails[k] = v
+		// Create a map of field name to value
+		fieldMap := make(map[string]string)
+		for j := 0; j < len(headers) && j < len(data); j++ {
+			fieldMap[headers[j]] = data[j]
+		}
+
+		// Check if this is our backend or a server in our backend
+		pxname, hasPxname := fieldMap["pxname"]
+		svname, hasSvname := fieldMap["svname"]
+		if !hasPxname || !hasSvname || pxname != backendName {
+			continue
+		}
+
+		// Handle backend entry
+		if svname == "BACKEND" {
+			foundBackend = true
+
+			// Save all stats
+			for k, v := range fieldMap {
+				if v != "" {
+					backendInfo.Stats[k] = v
+				}
 			}
+
+			// Extract specific fields
+			if status, ok := fieldMap["status"]; ok {
+				backendInfo.Status = status
+			}
+
+			if sessionStr, ok := fieldMap["scur"]; ok {
+				if sess, err := strconv.Atoi(sessionStr); err == nil {
+					sessions = sess
+				}
+			}
+
+			backendInfo.Sessions = sessions
+		} else if svname != "FRONTEND" {
+			// This is a server entry
+			server := ServerInfo{
+				Name: svname,
+			}
+
+			// Extract server address and port if available
+			if addr, ok := fieldMap["addr"]; ok {
+				server.Address = addr
+
+				// Some versions might include port in the address
+				if strings.Contains(addr, ":") {
+					parts := strings.Split(addr, ":")
+					server.Address = parts[0]
+					if len(parts) > 1 {
+						if port, err := strconv.Atoi(parts[1]); err == nil {
+							server.Port = port
+						}
+					}
+				}
+			}
+
+			// Extract other server info
+			if status, ok := fieldMap["status"]; ok {
+				server.Status = status
+			}
+
+			if weightStr, ok := fieldMap["weight"]; ok {
+				if weight, err := strconv.Atoi(weightStr); err == nil {
+					server.Weight = weight
+				}
+			}
+
+			if checkStatus, ok := fieldMap["check_status"]; ok {
+				server.CheckStatus = checkStatus
+			}
+
+			if lastChgStr, ok := fieldMap["lastchg"]; ok {
+				server.LastStatusChange = lastChgStr
+			}
+
+			if connsStr, ok := fieldMap["scur"]; ok {
+				if conns, err := strconv.Atoi(connsStr); err == nil {
+					server.ActiveConnections = conns
+				}
+			}
+
+			if totConnsStr, ok := fieldMap["stot"]; ok {
+				if conns, err := strconv.Atoi(totConnsStr); err == nil {
+					server.TotalConnections = conns
+				}
+			}
+
+			backendInfo.Servers = append(backendInfo.Servers, server)
 		}
 	}
 
-	slog.Debug("Successfully retrieved backend details", "backend", backendName)
-	return backendDetails, nil
+	if !foundBackend {
+		slog.Error("Backend not found", "backend", backendName)
+		return nil, fmt.Errorf("backend not found: %s", backendName)
+	}
+
+	slog.Debug("Successfully retrieved backend info", "backend", backendName, "servers", len(backendInfo.Servers))
+	return backendInfo, nil
 }
 
-// SetMaxConnServer sets the maxconn value for a server within a backend.
-func (c *HAProxyClient) SetMaxConnServer(backend, server string, maxconn int) error {
-	slog.Debug("HAProxyClient.SetMaxConnServer called", "backend", backend, "server", server, "maxconn", maxconn)
+// EnableBackend enables a backend.
+func (c *HAProxyClient) EnableBackend(backendName string) error {
+	slog.Debug("Enabling backend", "backend", backendName)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
+	// Enable the backend by setting its state to ready
+	command := fmt.Sprintf("backend %s", backendName)
+	result, err := c.client.ExecuteRaw(command)
 	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
+		slog.Error("Failed to enable backend", "backend", backendName, "error", err)
+		return fmt.Errorf("failed to enable backend %s: %w", backendName, err)
 	}
 
-	// Construct command
-	cmd := fmt.Sprintf("set maxconn server %s/%s %d", backend, server, maxconn)
-
-	// Execute the command
-	_, err = runtimeClient.ExecuteRaw(cmd)
-	if err != nil {
-		slog.Error("Failed to set server maxconn", "error", err, "backend", backend, "server", server)
-		return fmt.Errorf("failed to set maxconn for server %s/%s: %w", backend, server, err)
+	// Check if the result indicates success
+	if result != "" {
+		slog.Debug("Command output", "output", result)
 	}
 
-	slog.Debug("Successfully set server maxconn", "backend", backend, "server", server, "maxconn", maxconn)
+	// Execute additional command to set state
+	stateCmd := fmt.Sprintf("set server %s/default-backend state ready", backendName)
+	_, err = c.client.ExecuteRaw(stateCmd)
+	if err != nil {
+		slog.Error("Failed to set backend state", "backend", backendName, "error", err)
+		return fmt.Errorf("failed to set backend %s state: %w", backendName, err)
+	}
+
+	slog.Debug("Successfully enabled backend", "backend", backendName)
 	return nil
+}
+
+// DisableBackend disables a backend.
+func (c *HAProxyClient) DisableBackend(backendName string) error {
+	slog.Debug("Disabling backend", "backend", backendName)
+
+	// Disable the backend by setting its state to maint
+	command := fmt.Sprintf("backend %s", backendName)
+	result, err := c.client.ExecuteRaw(command)
+	if err != nil {
+		slog.Error("Failed to disable backend", "backend", backendName, "error", err)
+		return fmt.Errorf("failed to disable backend %s: %w", backendName, err)
+	}
+
+	// Check if the result indicates success
+	if result != "" {
+		slog.Debug("Command output", "output", result)
+	}
+
+	// Execute additional command to set state
+	stateCmd := fmt.Sprintf("set server %s/default-backend state maint", backendName)
+	_, err = c.client.ExecuteRaw(stateCmd)
+	if err != nil {
+		slog.Error("Failed to set backend state", "backend", backendName, "error", err)
+		return fmt.Errorf("failed to set backend %s state: %w", backendName, err)
+	}
+
+	slog.Debug("Successfully disabled backend", "backend", backendName)
+	return nil
+}
+
+// splitAndTrim splits a string by newlines and trims each line, returning only non-empty lines
+func splitAndTrim(s string) []string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	result := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
 }

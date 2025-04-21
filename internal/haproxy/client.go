@@ -7,212 +7,121 @@ import (
 	"log/slog"
 	"net/url"
 
-	"github.com/haproxytech/client-native/v6/models"
 	"github.com/haproxytech/client-native/v6/runtime"
-	rtopt "github.com/haproxytech/client-native/v6/runtime/options"
+	runtimeoptions "github.com/haproxytech/client-native/v6/runtime/options"
 )
 
-// HAProxyClient is a client for interacting with HAProxy's Runtime API.
+// HAProxyClient provides methods for interacting with HAProxy's Runtime API.
 type HAProxyClient struct {
-	// Runtime API client
-	runtimeClient runtime.Runtime
-
-	// Runtime socket path
-	SocketPath string
-
-	// Compatibility client for backward compatibility
-	Client *compatClient
+	RuntimeAPIURL    string
+	ConfigurationURL string
+	client           runtime.Runtime
 }
 
-// ClientOptions provides configuration options for creating a new HAProxy Runtime API client.
-type ClientOptions struct {
-	// Socket path for the HAProxy Runtime API (required)
-	SocketPath string
-}
+// NewHAProxyClient creates a new HAProxyClient using the provided Runtime API endpoint.
+func NewHAProxyClient(runtimeAPIURL, configurationURL string) (*HAProxyClient, error) {
+	slog.Debug("Creating new HAProxy client", "runtimeAPIURL", runtimeAPIURL, "configurationURL", configurationURL)
 
-// ConfigClient defines the interface for the configuration client
-// This allows us to maintain backward compatibility
-type ConfigClient interface {
-	GetBackends(transactionID string) (string, models.Backends, error)
-	GetBackend(name string, transactionID string) (string, *models.Backend, error)
-	GetServers(parentType string, parentName string, transactionID string) (string, models.Servers, error)
-	GetServer(name string, parentType string, parentName string, transactionID string) (string, *models.Server, error)
-}
-
-// MockConfigClient provides a basic implementation of the configuration client
-// to maintain backward compatibility while we transition to the runtime-only approach
-type MockConfigClient struct {
-	runtimeClient runtime.Runtime
-}
-
-// GetBackends returns a mocked list of backends
-func (m *MockConfigClient) GetBackends(transactionID string) (string, models.Backends, error) {
-	slog.Warn("Using mock configuration client - GetBackends")
-	// Query the runtime client to get some real data if possible
-	if m.runtimeClient != nil {
-		// We're not using the result directly, just checking if the runtime client works
-		_, err := m.runtimeClient.ExecuteRaw("show stat")
-		if err == nil {
-			// Parse the stats to find backend names - this is simplified
-			backends := models.Backends{}
-
-			// Return some minimal mocked data
-			return "1", backends, nil
-		}
+	// Parse the Runtime API URL
+	parsedRuntimeURL, err := url.Parse(runtimeAPIURL)
+	if err != nil {
+		slog.Error("Failed to parse runtime API URL", "url", runtimeAPIURL, "error", err)
+		return nil, fmt.Errorf("failed to parse runtime API URL: %w", err)
 	}
 
-	// If runtime client failed, return a generic error
-	return "", nil, fmt.Errorf("configuration client is deprecated and mock data is not available")
-}
-
-// GetBackend returns a mocked backend
-func (m *MockConfigClient) GetBackend(name string, transactionID string) (string, *models.Backend, error) {
-	slog.Warn("Using mock configuration client - GetBackend", "backend", name)
-	// Return a minimal mock backend with just the name
-	backend := &models.Backend{}
-	// Set the name field directly
-	backend.Name = name
-	return "1", backend, nil
-}
-
-// GetServers returns a mocked list of servers
-func (m *MockConfigClient) GetServers(parentType string, parentName string, transactionID string) (string, models.Servers, error) {
-	slog.Warn("Using mock configuration client - GetServers", "parent", parentName)
-
-	// Try to get real server info from runtime client if available
-	if m.runtimeClient != nil {
-		serverState, _ := m.runtimeClient.GetServersState(parentName)
-		if serverState != nil {
-			// Convert runtime server state to config servers
-			servers := models.Servers{}
-			for _, s := range serverState {
-				server := &models.Server{
-					Name:    s.Name,
-					Address: s.Address,
-				}
-				servers = append(servers, server)
-			}
-			return "1", servers, nil
-		}
+	// Validate the Runtime API URL
+	if parsedRuntimeURL.Scheme != "unix" && parsedRuntimeURL.Scheme != "tcp" {
+		slog.Error("Unsupported runtime API URL scheme", "scheme", parsedRuntimeURL.Scheme)
+		return nil, fmt.Errorf("unsupported runtime API URL scheme: %s (must be unix or tcp)", parsedRuntimeURL.Scheme)
 	}
 
-	// Return empty servers array with no error
-	return "1", models.Servers{}, nil
-}
+	// Create context and set up socket option
+	ctx := context.Background()
+	socketOpt := runtimeoptions.Socket(parsedRuntimeURL.Path)
 
-// GetServer returns a mocked server
-func (m *MockConfigClient) GetServer(name string, parentType string, parentName string, transactionID string) (string, *models.Server, error) {
-	slog.Warn("Using mock configuration client - GetServer", "parent", parentName, "server", name)
-
-	// Try to get real server info from runtime client if available
-	if m.runtimeClient != nil {
-		serverState, _ := m.runtimeClient.GetServerState(parentName, name)
-		if serverState != nil {
-			// Convert runtime server state to config server
-			server := &models.Server{
-				Name:    serverState.Name,
-				Address: serverState.Address,
-			}
-
-			// Try to parse port if available
-			var port int64
-			port = 80 // Default port as fallback
-
-			server.Port = &port
-
-			return "1", server, nil
-		}
-	}
-
-	// Return a minimal mock server with just the name
-	server := &models.Server{
-		Name:    name,
-		Address: "0.0.0.0",
-	}
-	return "1", server, nil
-}
-
-// For backward compatibility, this type allows existing code to continue working
-// while we transition away from the configuration client
-type compatClient struct {
-	runtimeClient runtime.Runtime
-	configClient  *MockConfigClient
-}
-
-func (c *compatClient) Runtime() (runtime.Runtime, error) {
-	return c.runtimeClient, nil
-}
-
-func (c *compatClient) Configuration() (ConfigClient, error) {
-	if c.configClient == nil {
-		// Initialize mock config client
-		c.configClient = &MockConfigClient{runtimeClient: c.runtimeClient}
-	}
-	return c.configClient, nil
-}
-
-// NewHAProxyClient creates a new HAProxy Runtime API client.
-// It accepts either a socket path string or a ClientOptions struct.
-func NewHAProxyClient(options interface{}) (*HAProxyClient, error) {
-	var socketPath string
-
-	// Handle different types of input parameters
-	switch opts := options.(type) {
-	case string:
-		// If a single string was passed, treat it as socketPath
-		socketPath = opts
-
-	case ClientOptions:
-		// Use the full ClientOptions struct
-		socketPath = opts.SocketPath
-
-	case []string:
-		// If a string slice was passed, use first element as socketPath
-		if len(opts) > 0 {
-			socketPath = opts[0]
-		}
-
-	default:
-		// Unsupported options type
-		return nil, fmt.Errorf("unsupported options type: %T", options)
-	}
-
-	// Validate socket path
-	if socketPath == "" {
-		return nil, fmt.Errorf("HAProxy socket path is empty")
-	}
-
-	slog.Debug("Creating new HAProxy Runtime API client", "socketPath", socketPath)
-
-	// Create the runtime client with the socket option using the correct options package
-	runtimeClient, err := runtime.New(
-		context.Background(),
-		rtopt.Socket(socketPath),
-	)
+	// Create runtime client
+	runtimeClient, err := runtime.New(ctx, socketOpt)
 	if err != nil {
 		slog.Error("Failed to create HAProxy runtime client", "error", err)
 		return nil, fmt.Errorf("failed to create HAProxy runtime client: %w", err)
 	}
 
-	// Create our compatibility client
-	compat := &compatClient{
-		runtimeClient: runtimeClient,
+	// Test the connection with a simple command
+	_, err = runtimeClient.ExecuteRaw("help")
+	if err != nil {
+		slog.Error("Failed to connect to runtime API", "error", err)
+		return nil, fmt.Errorf("failed to connect to runtime API: %w", err)
 	}
 
-	// Create our client wrapper
-	client := &HAProxyClient{
-		runtimeClient: runtimeClient,
-		SocketPath:    socketPath,
-		Client:        compat,
-	}
-
-	slog.Info("HAProxy runtime client initialized successfully", "socketPath", socketPath)
-	return client, nil
+	return &HAProxyClient{
+		RuntimeAPIURL:    runtimeAPIURL,
+		ConfigurationURL: configurationURL,
+		client:           runtimeClient,
+	}, nil
 }
 
 // Runtime returns the underlying native runtime client.
 func (c *HAProxyClient) Runtime() runtime.Runtime {
-	return c.runtimeClient
+	return c.client
+}
+
+// ExecuteRuntimeCommand executes a raw command on HAProxy's Runtime API.
+func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
+	slog.Debug("Executing runtime command", "command", command)
+
+	// Execute command directly on the runtime client
+	result, err := c.client.ExecuteRaw(command)
+	if err != nil {
+		slog.Error("Failed to execute runtime command", "command", command, "error", err)
+		return "", fmt.Errorf("failed to execute runtime command: %w", err)
+	}
+
+	slog.Debug("Successfully executed runtime command", "command", command)
+	return result, nil
+}
+
+// GetProcessInfo retrieves information about the HAProxy process.
+func (c *HAProxyClient) GetProcessInfo() (map[string]string, error) {
+	slog.Debug("Getting HAProxy process info")
+
+	// Get info directly from the runtime client
+	info, err := c.client.GetInfo()
+	if err != nil {
+		slog.Error("Failed to get process info", "error", err)
+		return nil, fmt.Errorf("failed to get process info: %w", err)
+	}
+
+	// Convert the structured info to a simple map
+	infoMap := make(map[string]string)
+
+	// Access fields through the Info field
+	if info.Info != nil {
+		if info.Info.Version != "" {
+			infoMap["version"] = info.Info.Version
+		}
+
+		if info.Info.Uptime != nil {
+			infoMap["uptime"] = fmt.Sprintf("%d", *info.Info.Uptime)
+		}
+
+		if info.Info.ProcessNum != nil {
+			infoMap["process_num"] = fmt.Sprintf("%d", *info.Info.ProcessNum)
+		}
+
+		if info.Info.Pid != nil {
+			infoMap["pid"] = fmt.Sprintf("%d", *info.Info.Pid)
+		}
+	}
+
+	slog.Debug("Successfully retrieved HAProxy process info")
+	return infoMap, nil
+}
+
+// Close closes the HAProxy client connection.
+func (c *HAProxyClient) Close() error {
+	slog.Debug("Closing HAProxy client")
+	// No explicit close method in the upstream client, but adding this for future-proofing
+	return nil
 }
 
 // GetHaproxyAPIEndpoint returns the URL for the HAProxy API from socket path.
@@ -236,4 +145,52 @@ func GetHaproxyAPIEndpoint(socketPath string) (string, error) {
 	slog.Debug("HAProxy API endpoint", "url", apiURL)
 
 	return apiURL, nil
+}
+
+// Methods to support tools.go
+
+// GetBackends returns a list of all HAProxy backends
+func (c *HAProxyClient) GetBackends() ([]string, error) {
+	return c.ListBackends()
+}
+
+// GetBackendDetails retrieves details of a specific backend
+func (c *HAProxyClient) GetBackendDetails(backend string) (map[string]interface{}, error) {
+	backendInfo, err := c.GetBackendInfo(backend)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert BackendInfo to map for tools.go
+	result := map[string]interface{}{
+		"name":     backendInfo.Name,
+		"status":   backendInfo.Status,
+		"sessions": backendInfo.Sessions,
+		"stats":    backendInfo.Stats,
+	}
+
+	// Convert servers to map for consistent interface
+	servers := make([]map[string]interface{}, 0, len(backendInfo.Servers))
+	for _, server := range backendInfo.Servers {
+		serverMap := map[string]interface{}{
+			"name":               server.Name,
+			"address":            server.Address,
+			"port":               server.Port,
+			"status":             server.Status,
+			"weight":             server.Weight,
+			"check_status":       server.CheckStatus,
+			"last_status_change": server.LastStatusChange,
+			"total_connections":  server.TotalConnections,
+			"active_connections": server.ActiveConnections,
+		}
+		servers = append(servers, serverMap)
+	}
+	result["servers"] = servers
+
+	return result, nil
+}
+
+// SetMaxConnServer sets the maximum connections for a server
+func (c *HAProxyClient) SetMaxConnServer(backend, server string, maxconn int) error {
+	return c.SetServerMaxconn(backend, server, maxconn)
 }

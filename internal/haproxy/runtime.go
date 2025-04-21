@@ -15,11 +15,7 @@ func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
 	slog.Debug("HAProxyClient.GetRuntimeInfo called")
 
 	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return nil, fmt.Errorf("failed to get runtime client: %w", err)
-	}
+	runtimeClient := c.Runtime()
 
 	// Get process info
 	info, err := runtimeClient.GetInfo()
@@ -83,13 +79,6 @@ func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
 func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 	slog.Debug("HAProxyClient.ShowStat called", "filter", filter)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return nil, fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct command - add filter if provided
 	cmd := "show stat"
 	if filter != "" {
@@ -97,7 +86,7 @@ func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 	}
 
 	// Execute command
-	result, err := runtimeClient.ExecuteRaw(cmd)
+	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to execute 'show stat' command", "error", err)
 		return nil, fmt.Errorf("failed to execute 'show stat': %w", err)
@@ -208,15 +197,8 @@ func (c *HAProxyClient) GetStats() (map[string]interface{}, error) {
 func (c *HAProxyClient) DebugCounters() (map[string]string, error) {
 	slog.Debug("HAProxyClient.DebugCounters called")
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return nil, fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Execute the debug counters command
-	result, err := runtimeClient.ExecuteRaw("debug dev counters")
+	result, err := c.ExecuteRuntimeCommand("debug dev counters")
 	if err != nil {
 		slog.Error("Failed to execute 'debug counters' command", "error", err)
 		return nil, fmt.Errorf("failed to execute 'debug counters': %w", err)
@@ -243,15 +225,8 @@ func (c *HAProxyClient) DebugCounters() (map[string]string, error) {
 func (c *HAProxyClient) ClearCountersAll() error {
 	slog.Debug("HAProxyClient.ClearCountersAll called")
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Execute the clear counters all command
-	_, err = runtimeClient.ExecuteRaw("clear counters all")
+	_, err := c.ExecuteRuntimeCommand("clear counters all")
 	if err != nil {
 		slog.Error("Failed to execute 'clear counters all' command", "error", err)
 		return fmt.Errorf("failed to clear counters: %w", err)
@@ -265,18 +240,11 @@ func (c *HAProxyClient) ClearCountersAll() error {
 func (c *HAProxyClient) DumpStatsFile(filepath string) (string, error) {
 	slog.Debug("HAProxyClient.DumpStatsFile called", "filepath", filepath)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return "", fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct command with the filepath
 	cmd := fmt.Sprintf("dump stats-file %s", filepath)
 
 	// Execute the command
-	result, err := runtimeClient.ExecuteRaw(cmd)
+	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to execute 'dump stats-file' command", "error", err, "filepath", filepath)
 		return "", fmt.Errorf("failed to dump stats to file: %w", err)
@@ -295,13 +263,6 @@ func (c *HAProxyClient) DumpStatsFile(filepath string) (string, error) {
 func (c *HAProxyClient) ShowServersState(backend string) ([]map[string]string, error) {
 	slog.Debug("HAProxyClient.ShowServersState called", "backend", backend)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return nil, fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct command with optional backend filter
 	cmd := "show servers state"
 	if backend != "" {
@@ -309,7 +270,7 @@ func (c *HAProxyClient) ShowServersState(backend string) ([]map[string]string, e
 	}
 
 	// Execute the command
-	result, err := runtimeClient.ExecuteRaw(cmd)
+	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to execute 'show servers state' command", "error", err)
 		return nil, fmt.Errorf("failed to show servers state: %w", err)
@@ -368,18 +329,11 @@ func (c *HAProxyClient) ShowServersState(backend string) ([]map[string]string, e
 func (c *HAProxyClient) SetWeight(backend, server string, weight int) (string, error) {
 	slog.Debug("HAProxyClient.SetWeight called", "backend", backend, "server", server, "weight", weight)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return "", fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct command
 	cmd := fmt.Sprintf("set weight %s/%s %d", backend, server, weight)
 
 	// Execute the command
-	result, err := runtimeClient.ExecuteRaw(cmd)
+	result, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to set server weight", "error", err, "backend", backend, "server", server)
 		return "", fmt.Errorf("failed to set weight for server %s/%s: %w", backend, server, err)
@@ -400,18 +354,11 @@ func (c *HAProxyClient) SetWeight(backend, server string, weight int) (string, e
 func (c *HAProxyClient) EnableHealth(backend, server string) error {
 	slog.Info("Enabling health checks", "backend", backend, "server", server)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct the command
 	cmd := fmt.Sprintf("enable health %s/%s", backend, server)
 
 	// Execute the command
-	_, err = runtimeClient.ExecuteRaw(cmd)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to enable health checks", "error", err, "backend", backend, "server", server)
 		return fmt.Errorf("failed to enable health checks for %s/%s: %w", backend, server, err)
@@ -425,18 +372,11 @@ func (c *HAProxyClient) EnableHealth(backend, server string) error {
 func (c *HAProxyClient) DisableHealth(backend, server string) error {
 	slog.Info("Disabling health checks", "backend", backend, "server", server)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct the command
 	cmd := fmt.Sprintf("disable health %s/%s", backend, server)
 
 	// Execute the command
-	_, err = runtimeClient.ExecuteRaw(cmd)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to disable health checks", "error", err, "backend", backend, "server", server)
 		return fmt.Errorf("failed to disable health checks for %s/%s: %w", backend, server, err)
@@ -450,18 +390,11 @@ func (c *HAProxyClient) DisableHealth(backend, server string) error {
 func (c *HAProxyClient) EnableAgent(backend, server string) error {
 	slog.Info("Enabling agent checks", "backend", backend, "server", server)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct the command
 	cmd := fmt.Sprintf("enable agent %s/%s", backend, server)
 
 	// Execute the command
-	_, err = runtimeClient.ExecuteRaw(cmd)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to enable agent checks", "error", err, "backend", backend, "server", server)
 		return fmt.Errorf("failed to enable agent checks for %s/%s: %w", backend, server, err)
@@ -475,18 +408,11 @@ func (c *HAProxyClient) EnableAgent(backend, server string) error {
 func (c *HAProxyClient) DisableAgent(backend, server string) error {
 	slog.Info("Disabling agent checks", "backend", backend, "server", server)
 
-	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
-
 	// Construct the command
 	cmd := fmt.Sprintf("disable agent %s/%s", backend, server)
 
 	// Execute the command
-	_, err = runtimeClient.ExecuteRaw(cmd)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to disable agent checks", "error", err, "backend", backend, "server", server)
 		return fmt.Errorf("failed to disable agent checks for %s/%s: %w", backend, server, err)
@@ -505,11 +431,7 @@ func (c *HAProxyClient) ReloadHAProxy() error {
 	slog.Info("Reloading HAProxy configuration")
 
 	// Get the runtime client
-	runtimeClient, err := c.Client.Runtime()
-	if err != nil {
-		slog.Error("Failed to get runtime client", "error", err)
-		return fmt.Errorf("failed to get runtime client: %w", err)
-	}
+	runtimeClient := c.Runtime()
 
 	// Try to reload HAProxy via the socket
 	result, err := runtimeClient.Reload()
