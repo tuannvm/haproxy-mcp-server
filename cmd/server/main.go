@@ -77,7 +77,7 @@ func main() {
 			Scheme: "unix",
 			Path:   cfg.HAProxyRuntimeSocket,
 		}
-		runtimeAPIURL = fmt.Sprintf("%s/v2", u)
+		runtimeAPIURL = u.String()
 
 	case "tcp4":
 		// TCP4 mode
@@ -101,7 +101,7 @@ func main() {
 	slog.Info("Connecting to HAProxy", "runtimeAPIURL", runtimeAPIURL)
 
 	// Create the HAProxy client with the appropriate runtime API URL
-	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL, "")
+	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL)
 	if err != nil {
 		// Log fatal here as the client is essential for the server's function
 		slog.Error("Failed to initialize HAProxy client", "error", err)

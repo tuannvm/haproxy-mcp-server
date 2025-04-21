@@ -1,6 +1,10 @@
 package haproxy
 
-import "github.com/haproxytech/client-native/v6/runtime"
+import (
+	"net/url"
+
+	"github.com/haproxytech/client-native/v6/runtime"
+)
 
 // Server states
 const (
@@ -21,11 +25,23 @@ const (
 	StatusDown = "DOWN"
 )
 
+// HAProxyClientMode defines how the client connects to HAProxy
+type HAProxyClientMode int
+
+const (
+	// ClientModeNative uses the HAProxytech/client-native library
+	ClientModeNative HAProxyClientMode = iota
+	// ClientModeDirect uses direct socket connection (TCP or Unix)
+	ClientModeDirect
+)
+
 // HAProxyClient provides methods for interacting with HAProxy's Runtime API.
 type HAProxyClient struct {
 	RuntimeAPIURL    string
 	ConfigurationURL string
 	client           runtime.Runtime
+	ParsedURL        *url.URL
+	Mode             HAProxyClientMode
 }
 
 // BackendInfo represents detailed information about a backend.

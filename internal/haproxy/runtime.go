@@ -14,55 +14,33 @@ import (
 func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
 	slog.Debug("HAProxyClient.GetRuntimeInfo called")
 
-	// Get the runtime client
-	runtimeClient := c.Runtime()
-
-	// Get process info
-	info, err := runtimeClient.GetInfo()
+	// Execute the 'show info' command directly
+	result, err := c.ExecuteRuntimeCommand("show info")
 	if err != nil {
 		slog.Error("Failed to get runtime info", "error", err)
 		return nil, fmt.Errorf("failed to get runtime info: %w", err)
 	}
 
-	// Create a map with the info details
+	// Parse the result into a map
 	infoMap := make(map[string]string)
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
-	// Access fields through the Info field
-	if info.Info != nil {
-		if info.Info.Version != "" {
-			infoMap["version"] = info.Info.Version
+	for _, line := range lines {
+		// Skip empty lines
+		if line == "" {
+			continue
 		}
 
-		if info.Info.Uptime != nil {
-			infoMap["uptime"] = fmt.Sprintf("%d", *info.Info.Uptime)
-		}
-
-		if info.Info.ProcessNum != nil {
-			infoMap["process_num"] = fmt.Sprintf("%d", *info.Info.ProcessNum)
-		}
-
-		if info.Info.Pid != nil {
-			infoMap["pid"] = fmt.Sprintf("%d", *info.Info.Pid)
-		}
-
-		if info.Info.Tasks != nil {
-			infoMap["tasks"] = fmt.Sprintf("%d", *info.Info.Tasks)
-		}
-
-		if info.Info.Nbthread != nil {
-			infoMap["threads"] = fmt.Sprintf("%d", *info.Info.Nbthread)
-		}
-
-		if info.Info.MaxConn != nil {
-			infoMap["maxconn"] = fmt.Sprintf("%d", *info.Info.MaxConn)
-		}
-
-		if info.Info.CurrConns != nil {
-			infoMap["curr_conns"] = fmt.Sprintf("%d", *info.Info.CurrConns)
+		// Split each line by colon to get key-value pairs
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			infoMap[key] = value
 		}
 	}
 
-	// Add some default fields if not available
+	// Add default values if missing
 	if _, ok := infoMap["version"]; !ok {
 		infoMap["version"] = "unknown"
 	}
@@ -124,129 +102,116 @@ func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 func (c *HAProxyClient) GetStats() (map[string]interface{}, error) {
 	slog.Debug("HAProxyClient.GetStats called")
 
-	// Get native stats directly from the runtime client
-	nativeStats := c.client.GetStats()
-	if nativeStats.Error != "" {
-		slog.Error("Failed to get stats", "error", nativeStats.Error)
-		return nil, fmt.Errorf("failed to get stats: %s", nativeStats.Error)
+	// Use ShowStat which is already implemented with direct command
+	rawStats, err := c.ShowStat("")
+	if err != nil {
+		slog.Error("Failed to get stats", "error", err)
+		return nil, fmt.Errorf("failed to get stats: %w", err)
 	}
 
-	// Build a structured result with real data
+	// Build a structured result with the data
 	result := make(map[string]interface{})
 
 	// Group stats by backend/frontend and collect server info
 	backendServers := make(map[string][]map[string]interface{})
 
-	for _, stat := range nativeStats.Stats {
-		if stat.Stats == nil {
-			continue
-		}
-
+	for _, stat := range rawStats {
 		// Create a base stats map for this entry
 		statMap := make(map[string]interface{})
-		statMap["type"] = stat.Type
+
+		// Get type (frontend, backend, server)
+		statType := stat["type"]
+		statMap["type"] = statType
 
 		// Add key statistics
-		if stat.Stats.Status != "" {
-			statMap["status"] = stat.Stats.Status
+		if status, ok := stat["status"]; ok {
+			statMap["status"] = status
 		}
 
-		if stat.Stats.Scur != nil {
-			statMap["current_sessions"] = *stat.Stats.Scur
+		if scur, ok := stat["scur"]; ok {
+			statMap["current_sessions"] = scur
 		}
 
-		if stat.Stats.Smax != nil {
-			statMap["max_sessions"] = *stat.Stats.Smax
+		if smax, ok := stat["smax"]; ok {
+			statMap["max_sessions"] = smax
 		}
 
-		if stat.Stats.Slim != nil {
-			statMap["sessions_limit"] = *stat.Stats.Slim
+		if slim, ok := stat["slim"]; ok {
+			statMap["sessions_limit"] = slim
 		}
 
-		if stat.Stats.Bin != nil {
-			statMap["bytes_in"] = *stat.Stats.Bin
+		if bin, ok := stat["bin"]; ok {
+			statMap["bytes_in"] = bin
 		}
 
-		if stat.Stats.Bout != nil {
-			statMap["bytes_out"] = *stat.Stats.Bout
+		if bout, ok := stat["bout"]; ok {
+			statMap["bytes_out"] = bout
 		}
 
 		// Add more detailed stats
-		if stat.Stats.Rate != nil {
-			statMap["rate"] = *stat.Stats.Rate
+		if rate, ok := stat["rate"]; ok {
+			statMap["rate"] = rate
 		}
 
-		if stat.Stats.RateMax != nil {
-			statMap["rate_max"] = *stat.Stats.RateMax
+		if rateMax, ok := stat["rate_max"]; ok {
+			statMap["rate_max"] = rateMax
 		}
 
-		if stat.Stats.ConnTot != nil {
-			statMap["connections_total"] = *stat.Stats.ConnTot
+		if connTot, ok := stat["conn_tot"]; ok {
+			statMap["connections_total"] = connTot
 		}
 
 		// Handle different types of stats
-		switch stat.Type {
+		name := stat["pxname"]
+		switch statType {
 		case "frontend":
-			result[stat.Name] = statMap
+			result[name] = statMap
 		case "backend":
 			// Store the backend stats
-			result[stat.Name] = statMap
+			result[name] = statMap
 			// Initialize an empty server list for this backend
-			backendServers[stat.Name] = []map[string]interface{}{}
+			backendServers[name] = []map[string]interface{}{}
 		case "server":
 			// This is a server entry, add it to the corresponding backend
-			if stat.BackendName != "" {
+			backendName := stat["pxname"]
+			if backendName != "" {
 				// Create server stats
 				serverMap := make(map[string]interface{})
-				serverMap["name"] = stat.Name
+				serverMap["name"] = stat["svname"]
 
-				if stat.Stats.Status != "" {
-					serverMap["status"] = stat.Stats.Status
+				// Copy relevant stats
+				for k, v := range stat {
+					serverMap[k] = v
 				}
 
-				if stat.Stats.Weight != nil {
-					serverMap["weight"] = *stat.Stats.Weight
+				// Add server to its backend
+				if servers, ok := backendServers[backendName]; ok {
+					backendServers[backendName] = append(servers, serverMap)
 				}
-
-				if stat.Stats.Scur != nil {
-					serverMap["current_sessions"] = *stat.Stats.Scur
-				}
-
-				if stat.Stats.CheckStatus != "" {
-					serverMap["check_status"] = stat.Stats.CheckStatus
-				}
-
-				if stat.Stats.Addr != "" {
-					serverMap["address"] = stat.Stats.Addr
-				}
-
-				// Add to the servers list for this backend
-				backendServers[stat.BackendName] = append(backendServers[stat.BackendName], serverMap)
 			}
 		}
 	}
 
-	// Add the server lists to the respective backends
+	// Add servers to their backends
 	for backendName, servers := range backendServers {
-		if backend, exists := result[backendName]; exists {
-			backendMap := backend.(map[string]interface{})
-			backendMap["servers"] = servers
+		if backend, ok := result[backendName].(map[string]interface{}); ok {
+			backend["servers"] = servers
 		}
 	}
 
-	slog.Debug("Successfully retrieved stats", "proxies", len(result))
+	slog.Debug("Successfully processed stats", "groups", len(result))
 	return result, nil
 }
 
-// DebugCounters executes the 'debug counters' runtime command to get HAProxy internal counters.
+// DebugCounters retrieves HAProxy internal counters.
 func (c *HAProxyClient) DebugCounters() (map[string]string, error) {
 	slog.Debug("HAProxyClient.DebugCounters called")
 
-	// Execute the debug counters command
+	// Execute the command directly
 	result, err := c.ExecuteRuntimeCommand("debug dev counters")
 	if err != nil {
-		slog.Error("Failed to execute 'debug counters' command", "error", err)
-		return nil, fmt.Errorf("failed to execute 'debug counters': %w", err)
+		slog.Error("Failed to get debug counters", "error", err)
+		return nil, fmt.Errorf("failed to get debug counters: %w", err)
 	}
 
 	// Parse the output into a map
@@ -254,11 +219,25 @@ func (c *HAProxyClient) DebugCounters() (map[string]string, error) {
 	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	for _, line := range lines {
-		parts := strings.SplitN(line, ":", 2)
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Try to parse the line as "key=value" or "key: value"
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			// Try with colon separator
+			parts = strings.SplitN(line, ":", 2)
+		}
+
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
 			counters[key] = value
+		} else {
+			// For lines without a clear key-value structure, use the line itself as the key
+			counters[line] = ""
 		}
 	}
 
