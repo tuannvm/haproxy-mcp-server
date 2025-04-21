@@ -1,5 +1,12 @@
 # HAProxy MCP Server
 
+[![Build](https://github.com/tuannvm/haproxy-mcp-server/actions/workflows/build.yml/badge.svg)](https://github.com/tuannvm/haproxy-mcp-server/actions/workflows/build.yml)
+[![Release](https://github.com/tuannvm/haproxy-mcp-server/actions/workflows/release.yml/badge.svg)](https://github.com/tuannvm/haproxy-mcp-server/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/tuannvm/haproxy-mcp-server)](https://goreportcard.com/report/github.com/tuannvm/haproxy-mcp-server)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/tuannvm/haproxy-mcp-server)
+![License](https://img.shields.io/github/license/tuannvm/haproxy-mcp-server)
+![Docker Pulls](https://img.shields.io/docker/pulls/tuannvm/haproxy-mcp-server)
+
 A Model Context Protocol (MCP) server for HAProxy implemented in Go, leveraging HAProxytech/client-native and mcp-go.
 
 ## Overview
@@ -15,6 +22,16 @@ The HAProxy MCP Server provides a standardized way for AI assistants to interact
 - **Docker Support**: Pre-built Docker images for easy deployment
 
 ## Installation
+
+### Homebrew
+
+```bash
+# Add the tap
+brew tap tuannvm/tap
+
+# Install the package
+brew install haproxy-mcp-server
+```
 
 ### From Binary
 
@@ -83,298 +100,17 @@ To use this server with MCP-compatible AI assistants, configure the assistant wi
 
 ## Available MCP Tools
 
-The HAProxy MCP Server exposes the following tools, grouped by feature area:
+The HAProxy MCP Server exposes tools that map directly to HAProxy's Runtime API commands, organized into the following categories:
 
-### Statistics & Process Info
+- **Statistics & Process Info**: Retrieve statistics, server information, and manage counters
+- **Topology Discovery**: List frontends, backends, server states, and configuration details
+- **Dynamic Pool Management**: Add, remove, enable/disable servers and adjust their properties
+- **Session Control**: View and manage active sessions
+- **Maps & ACLs**: Manage HAProxy maps and ACL files
+- **Health Checks & Agents**: Control health checks and agent-based monitoring
+- **Miscellaneous**: View errors, run echo tests, and get help information
 
-#### show_stat
-Retrieves the full statistics table for HAProxy.
-
-**Arguments:**
-- `filter` (optional): Filter by proxy or server names
-
-**Example Response:**
-```json
-{
-  "stats": [
-    {
-      "pxname": "web-frontend",
-      "svname": "FRONTEND",
-      "status": "OPEN",
-      "sessions_current": 12,
-      "bytes_in": 24560,
-      "bytes_out": 145890
-    },
-    {
-      "pxname": "web-backend",
-      "svname": "server1",
-      "status": "UP",
-      "sessions_current": 5,
-      "bytes_in": 12500,
-      "bytes_out": 72945
-    }
-  ]
-}
-```
-
-#### show_info
-Displays HAProxy version, uptime, and process information.
-
-**Arguments:** None
-
-**Example Response:**
-```json
-{
-  "info": {
-    "version": "HAProxy version 2.6.6-9e7a86c 2023/05/28",
-    "uptime": "0d 2h 35m 12s",
-    "maxconn": 4000,
-    "process_num": 1,
-    "pid": 12345,
-    "mode": "http"
-  }
-}
-```
-
-### Topology Discovery
-
-#### show_frontend
-Lists all frontends with their bind addresses, modes, and states.
-
-**Arguments:** None
-
-**Example Response:**
-```json
-{
-  "frontends": [
-    {
-      "name": "web-frontend",
-      "bind": "*:80",
-      "mode": "http",
-      "state": "OPEN"
-    },
-    {
-      "name": "api-frontend",
-      "bind": "*:8080",
-      "mode": "http",
-      "state": "OPEN"
-    }
-  ]
-}
-```
-
-#### show_backend
-Lists all backends and their configuration.
-
-**Arguments:** None
-
-**Example Response:**
-```json
-{
-  "backends": [
-    {
-      "name": "web-backend",
-      "mode": "http",
-      "balance": "roundrobin",
-      "server_count": 3
-    },
-    {
-      "name": "api-backend",
-      "mode": "http",
-      "balance": "leastconn",
-      "server_count": 2
-    }
-  ]
-}
-```
-
-#### show_servers_state
-Displays per-server state, current sessions, and weight.
-
-**Arguments:**
-- `backend` (optional): Backend name to filter results
-
-**Example Response:**
-```json
-{
-  "servers": [
-    {
-      "backend": "web-backend",
-      "name": "server1",
-      "address": "192.168.1.10:8080",
-      "state": "UP",
-      "sessions_current": 12,
-      "weight": 100
-    },
-    {
-      "backend": "web-backend",
-      "name": "server2",
-      "address": "192.168.1.11:8080",
-      "state": "UP",
-      "sessions_current": 8,
-      "weight": 100
-    }
-  ]
-}
-```
-
-### Dynamic Pool Management
-
-#### add_server
-Dynamically registers a new server in a backend.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-- `address` (required): Server address (IP:port)
-- `weight` (optional): Server weight
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Server 'server3' successfully added to backend 'web-backend'"
-}
-```
-
-#### del_server
-Removes a dynamic server from a backend.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Server 'server3' successfully removed from backend 'web-backend'"
-}
-```
-
-#### enable_server
-Takes a server out of maintenance mode.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Server 'server1' in backend 'web-backend' has been enabled"
-}
-```
-
-#### disable_server
-Puts a server into maintenance mode.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Server 'server1' in backend 'web-backend' has been disabled"
-}
-```
-
-#### set_weight
-Changes a server's load-balancing weight.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-- `weight` (required): New weight value
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Server 'server1' in backend 'web-backend' weight changed from 100 to 50"
-}
-```
-
-### Session Control
-
-#### show_sess
-Lists all active sessions.
-
-**Arguments:**
-- `backend` (optional): Backend filter
-
-**Example Response:**
-```json
-{
-  "sessions": [
-    {
-      "id": "123456",
-      "frontend": "web-frontend",
-      "backend": "web-backend",
-      "server": "server1",
-      "age": "10s",
-      "client_ip": "10.0.0.5"
-    },
-    {
-      "id": "123457",
-      "frontend": "api-frontend",
-      "backend": "api-backend",
-      "server": "server2",
-      "age": "5s",
-      "client_ip": "10.0.0.6"
-    }
-  ]
-}
-```
-
-#### shutdown_session
-Terminates a specific client session by ID.
-
-**Arguments:**
-- `session_id` (required): Session ID
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Session 123456 has been terminated"
-}
-```
-
-### Health Checks & Agents
-
-#### enable_health
-Enables active health checks on a server.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Health checks enabled for server 'server1' in backend 'web-backend'"
-}
-```
-
-#### disable_health
-Disables active health checks on a server.
-
-**Arguments:**
-- `backend` (required): Backend name
-- `server_name` (required): Server name
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Health checks disabled for server 'server1' in backend 'web-backend'"
-}
-```
+For a complete list of all supported tools with their inputs, outputs, and corresponding HAProxy Runtime API commands, see the [tools.md](tools.md) documentation.
 
 ## Configuration
 

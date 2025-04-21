@@ -1,140 +1,235 @@
-Below is the revised project plan, with **Step 3** (“Define MCP Tools”) updated to include only commands actually supported by the HAProxy Runtime API. All other steps remain as before.
+# HAProxy MCP Server Tools
 
-## Revised Plan: Create HAProxy MCP Server
+This document describes the MCP tools supported by the HAProxy MCP Server, which allow AI assistants to interact with HAProxy's Runtime API through the Model Context Protocol (MCP).
 
-### Step 1: Project Initialization and Structure  
-_(unchanged — see previous plan)_
+Each tool maps directly to HAProxy Runtime API commands and is implemented using the `client-native` library's Runtime client.
 
-### Step 2: HAProxy Client Wrapper  
-_(unchanged — see previous plan)_
+## 1. Statistics & Process Info
 
-### Step 3 (Revised): Define MCP Tools Based on Runtime API  
-For each tool below, the implementation will invoke the corresponding Runtime API command over the stats socket via `client-native`’s Runtime client.
+### show_stat
+Retrieves the full statistics table for HAProxy.
+- **Runtime API**: `show stat`
+- **Input**: Optional filter (proxy or server names)
+- **Output**: Full stats table including bytes, sessions, errors
 
-#### 3.1 Statistics & Process Info  
-- **show_stat**  
-  • Runtime API: `show stat`  
-  • Input: optional filter (proxy or server names)  
-  • Output: full stats table (in JSON) including bytes, sessions, errors  
-- **show_info**  
-  • Runtime API: `show info`  
-  • Input: none  
-  • Output: version, uptime, process limits, mode  
-- **debug_counters**  
-  • Runtime API: `debug counters`  
-  • Input: none  
-  • Output: internal counters (allocations, events)  
-- **clear_counters_all**  
-  • Runtime API: `clear counters all`  
-  • Input: none  
-  • Output: confirmation that all stats have been reset  
-- **dump_stats_file**  
-  • Runtime API: `dump stats-file`  
-  • Input: filepath  
-  • Output: confirmation + path of dump file  
+### show_info
+Displays HAProxy version, uptime, and process information.
+- **Runtime API**: `show info`
+- **Input**: None
+- **Output**: Version, uptime, process limits, mode
 
-#### 3.2 Topology Discovery  
-- **show_frontend**  
-  • Runtime API: `show frontend`  
-  • Input: none  
-  • Output: list of frontends with bind address, mode, and state  
-- **show_backend**  
-  • Runtime API: `show backend`  
-  • Input: none  
-  • Output: list of backends and their configuration snippets  
-- **show_servers_state**  
-  • Runtime API: `show servers state`  
-  • Input: optional backend name  
-  • Output: per-server state, current sessions, weight  
-- **show_map**  
-  • Runtime API: `show map`  
-  • Input: map filename  
-  • Output: all key→value entries  
-- **show_table**  
-  • Runtime API: `show table`  
-  • Input: table name  
-  • Output: stick‑table entries  
+### debug_counters
+Shows internal HAProxy counters.
+- **Runtime API**: `debug counters`
+- **Input**: None
+- **Output**: Internal counters (allocations, events)
 
-#### 3.3 Dynamic Pool Management  
-- **add_server**  
-  • Runtime API: `add server <backend> <name> <addr>`  
-  • Input: backend, server name, address, optional port, weight  
-  • Output: success/failure  
-- **del_server**  
-  • Runtime API: `del server <backend> <name>`  
-  • Input: backend, server name  
-  • Output: success/failure  
-- **enable_server** / **disable_server**  
-  • Runtime API: `enable server <backend>/<name>` / `disable server <backend>/<name>`  
-  • Input: backend, server name  
-  • Output: confirmation  
-- **set_weight**  
-  • Runtime API: `set weight <backend>/<server> <weight>`  
-  • Input: backend, server, new weight  
-  • Output: old vs. new weight  
-- **set_maxconn_server**  
-  • Runtime API: `set maxconn server <backend>/<name> <maxconn>`  
-  • Input: backend, server, maxconn value  
-  • Output: confirmation  
-- **set_maxconn_frontend**  
-  • Runtime API: `set maxconn frontend <frontend> <maxconn>`  
-  • Input: frontend, maxconn value  
-  • Output: confirmation  
+### clear_counters_all
+Resets all statistics counters.
+- **Runtime API**: `clear counters all`
+- **Input**: None
+- **Output**: Confirmation that all stats have been reset
 
-#### 3.4 Session Control  
-- **show_sess**  
-  • Runtime API: `show sess`  
-  • Input: none or backend filter  
-  • Output: list of active sessions  
-- **shutdown_session**  
-  • Runtime API: `shutdown session <session‑id>`  
-  • Input: session ID  
-  • Output: confirmation  
-- **shutdown_sessions_server**  
-  • Runtime API: `shutdown sessions server <backend>/<name>`  
-  • Input: backend, server  
-  • Output: confirmation  
+### dump_stats_file
+Writes current statistics to a file.
+- **Runtime API**: `dump stats-file`
+- **Input**: Filepath
+- **Output**: Confirmation + path of dump file
 
-#### 3.5 Maps & ACLs  
-- **add_map** / **del_map**  
-  • Runtime API: `add map <file> <key> <value>` / `del map <file> <key>`  
-  • Input: map file, key, optional value  
-  • Output: confirmation  
-- **set_map**  
-  • Runtime API: `set map <file> <key> <value>`  
-  • Input: map file, key, new value  
-  • Output: confirmation  
-- **clear_map** / **commit_map**  
-  • Runtime API: `clear map <file>` / `commit map <file>`  
-  • Input: map file  
-  • Output: confirmation  
-- **add_acl**, **del_acl**, **clear_acl**, **commit_acl**  
-  • Runtime API: analogous commands for ACL files  
+## 2. Topology Discovery
 
-#### 3.6 Health Checks & Agents  
-- **enable_health** / **disable_health**  
-  • Runtime API: `enable health <backend>/<server>` / `disable health <backend>/<server>`  
-  • Input: backend, server  
-  • Output: confirmation  
-- **enable_agent** / **disable_agent**  
-  • Runtime API: `enable agent <backend>/<server>` / `disable agent <backend>/<server>`  
-  • Input: backend, server  
-  • Output: confirmation  
+### show_frontend
+Lists all frontends with their configurations.
+- **Runtime API**: `show frontend`
+- **Input**: None
+- **Output**: List of frontends with bind address, mode, and state
 
-#### 3.8 Miscellaneous  
-- **show_errors**  
-  • Runtime API: `show errors [since <seconds>]`  
-  • Output: protocol violation errors  
-- **echo**  
-  • Runtime API: `echo <string>`  
-  • Output: echoed string (useful for connectivity tests)  
-- **help**  
-  • Runtime API: `help`  
-  • Output: list of all Runtime API commands  
+### show_backend
+Lists all backends and their configurations.
+- **Runtime API**: `show backend`
+- **Input**: None
+- **Output**: List of backends and their configuration snippets
 
-> Each of these tools should be implemented in `internal/mcp/` with clearly defined input/output structs, registered in the MCP server, and exercised via `client-native`’s Runtime client under the hood.  
+### show_servers_state
+Displays per-server state and statistics.
+- **Runtime API**: `show servers state`
+- **Input**: Optional backend name
+- **Output**: Per-server state, current sessions, weight
 
-### Steps 4–10  
-_Remain unchanged — see previous plan._
+### show_map
+Shows entries in a map file.
+- **Runtime API**: `show map`
+- **Input**: Map filename
+- **Output**: All key→value entries
 
-This revised **Step 3** ensures our MCP server surface matches exactly what HAProxy’s Runtime API provides, avoiding unsupported or hypothetical operations.
+### show_table
+Shows entries in a stick table.
+- **Runtime API**: `show table`
+- **Input**: Table name
+- **Output**: Stick‑table entries
+
+## 3. Dynamic Pool Management
+
+### add_server
+Dynamically registers a new server in a backend.
+- **Runtime API**: `add server <backend> <name> <addr>`
+- **Input**: Backend, server name, address, optional port, weight
+- **Output**: Success/failure confirmation
+
+### del_server
+Removes a dynamic server from a backend.
+- **Runtime API**: `del server <backend> <name>`
+- **Input**: Backend, server name
+- **Output**: Success/failure confirmation
+
+### enable_server
+Takes a server out of maintenance mode.
+- **Runtime API**: `enable server <backend>/<name>`
+- **Input**: Backend, server name
+- **Output**: Confirmation
+
+### disable_server
+Puts a server into maintenance mode.
+- **Runtime API**: `disable server <backend>/<name>`
+- **Input**: Backend, server name
+- **Output**: Confirmation
+
+### set_weight
+Changes a server's load-balancing weight.
+- **Runtime API**: `set weight <backend>/<server> <weight>`
+- **Input**: Backend, server, new weight
+- **Output**: Old vs. new weight
+
+### set_maxconn_server
+Sets the maximum number of connections for a server.
+- **Runtime API**: `set maxconn server <backend>/<name> <maxconn>`
+- **Input**: Backend, server, maxconn value
+- **Output**: Confirmation
+
+### set_maxconn_frontend
+Sets the maximum number of connections for a frontend.
+- **Runtime API**: `set maxconn frontend <frontend> <maxconn>`
+- **Input**: Frontend, maxconn value
+- **Output**: Confirmation
+
+## 4. Session Control
+
+### show_sess
+Lists all active sessions.
+- **Runtime API**: `show sess`
+- **Input**: None or backend filter
+- **Output**: List of active sessions
+
+### shutdown_session
+Terminates a specific client session by ID.
+- **Runtime API**: `shutdown session <session‑id>`
+- **Input**: Session ID
+- **Output**: Confirmation
+
+### shutdown_sessions_server
+Terminates all sessions on a given server.
+- **Runtime API**: `shutdown sessions server <backend>/<name>`
+- **Input**: Backend, server
+- **Output**: Confirmation
+
+## 5. Maps & ACLs
+
+### add_map
+Adds an entry to a map file.
+- **Runtime API**: `add map <file> <key> <value>`
+- **Input**: Map file, key, value
+- **Output**: Confirmation
+
+### del_map
+Deletes a single entry from a map file.
+- **Runtime API**: `del map <file> <key>`
+- **Input**: Map file, key
+- **Output**: Confirmation
+
+### set_map
+Updates the value of an existing map entry.
+- **Runtime API**: `set map <file> <key> <value>`
+- **Input**: Map file, key, new value
+- **Output**: Confirmation
+
+### clear_map
+Deletes all entries from a map file.
+- **Runtime API**: `clear map <file>`
+- **Input**: Map file
+- **Output**: Confirmation
+
+### commit_map
+Commits a prepared map‐file transaction.
+- **Runtime API**: `commit map <file>`
+- **Input**: Map file
+- **Output**: Confirmation
+
+### add_acl
+Adds a value to an ACL list.
+- **Runtime API**: `add acl <file> <key>`
+- **Input**: ACL file, key
+- **Output**: Confirmation
+
+### del_acl
+Removes a value from an ACL list.
+- **Runtime API**: `del acl <file> <key>`
+- **Input**: ACL file, key
+- **Output**: Confirmation
+
+### clear_acl
+Deletes all entries from an ACL list.
+- **Runtime API**: `clear acl <file>`
+- **Input**: ACL file
+- **Output**: Confirmation
+
+### commit_acl
+Commits a prepared ACL transaction.
+- **Runtime API**: `commit acl <file>`
+- **Input**: ACL file
+- **Output**: Confirmation
+
+## 6. Health Checks & Agents
+
+### enable_health
+Enables active health checks on a server.
+- **Runtime API**: `enable health <backend>/<server>`
+- **Input**: Backend, server
+- **Output**: Confirmation
+
+### disable_health
+Disables active health checks on a server.
+- **Runtime API**: `disable health <backend>/<server>`
+- **Input**: Backend, server
+- **Output**: Confirmation
+
+### enable_agent
+Resumes agent-based health probes.
+- **Runtime API**: `enable agent <backend>/<server>`
+- **Input**: Backend, server
+- **Output**: Confirmation
+
+### disable_agent
+Stops agent-based health probes.
+- **Runtime API**: `disable agent <backend>/<server>`
+- **Input**: Backend, server
+- **Output**: Confirmation
+
+## 7. Miscellaneous
+
+### show_errors
+Lists protocol violation errors.
+- **Runtime API**: `show errors [since <seconds>]`
+- **Input**: Optional time filter in seconds
+- **Output**: Protocol violation errors
+
+### echo
+Returns a string (connectivity test).
+- **Runtime API**: `echo <string>`
+- **Input**: String to echo
+- **Output**: Echoed string
+
+### help
+Shows available Runtime API commands.
+- **Runtime API**: `help`
+- **Input**: None
+- **Output**: List of all Runtime API commands
