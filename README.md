@@ -16,6 +16,7 @@ The HAProxy MCP Server provides a standardized way for LLMs to interact with HAP
 ## Features
 
 - **Full HAProxy Runtime API Support**: Comprehensive coverage of HAProxy's runtime API commands
+- **Context-Aware Operations**: All operations support proper timeout and cancellation handling
 - **Stats Page Integration**: Support for HAProxy's web-based statistics page for enhanced metrics and visualization
 - **Secure Authentication**: Support for secure connections to HAProxy runtime API
 - **Multiple Transport Options**: Supports both stdio and HTTP transports for flexibility in different environments
@@ -69,6 +70,7 @@ To use this server with MCP-compatible LLMs, configure the assistant with the fo
         "HAPROXY_HOST": "localhost",
         "HAPROXY_PORT": "9999",
         "HAPROXY_RUNTIME_MODE": "tcp4",
+        "HAPROXY_RUNTIME_TIMEOUT": "10",
         "MCP_TRANSPORT": "stdio"
       }
     }
@@ -86,6 +88,7 @@ To use this server with MCP-compatible LLMs, configure the assistant with the fo
       "env": {
         "HAPROXY_RUNTIME_MODE": "unix",
         "HAPROXY_RUNTIME_SOCKET": "/var/run/haproxy/admin.sock",
+        "HAPROXY_RUNTIME_TIMEOUT": "10",
         "MCP_TRANSPORT": "stdio"
       }
     }
@@ -103,6 +106,7 @@ To use this server with MCP-compatible LLMs, configure the assistant with the fo
       "env": {
         "HAPROXY_STATS_ENABLED": "true",
         "HAPROXY_STATS_URL": "http://localhost:8404/stats",
+        "HAPROXY_STATS_TIMEOUT": "5",
         "MCP_TRANSPORT": "stdio"
       }
     }
@@ -111,6 +115,8 @@ To use this server with MCP-compatible LLMs, configure the assistant with the fo
 ```
 
 When using only the stats page functionality, there's no need to define Runtime API parameters like host and port. You can use both Runtime API and Stats Page simultaneously for complementary capabilities, or use only one of them based on your environment's constraints.
+
+> **Note:** For detailed instructions on how to configure HAProxy to expose the Runtime API and Statistics page, see the [HAProxy Configuration Guide](haproxy.md).
 
 ## Available MCP Tools
 
@@ -137,8 +143,10 @@ The server can be configured using the following environment variables:
 | HAPROXY_RUNTIME_MODE | Connection mode: "tcp4" or "unix" | tcp4 |
 | HAPROXY_RUNTIME_SOCKET | Socket path (Unix mode only) | /var/run/haproxy/admin.sock |
 | HAPROXY_RUNTIME_URL | Direct URL to Runtime API (optional, overrides other runtime settings) | |
+| HAPROXY_RUNTIME_TIMEOUT | Timeout for runtime API operations in seconds | 10 |
 | HAPROXY_STATS_ENABLED | Enable HAProxy stats page support | true |
 | HAPROXY_STATS_URL | URL to HAProxy stats page (e.g., http://localhost:8404/stats) | http://127.0.0.1:8404/stats |
+| HAPROXY_STATS_TIMEOUT | Timeout for stats page operations in seconds | 5 |
 | MCP_TRANSPORT | MCP transport method (stdio/http) | stdio |
 | MCP_PORT | Port for HTTP transport (when using http) | 8080 |
 | LOG_LEVEL | Logging level (debug/info/warn/error) | info |
@@ -151,6 +159,8 @@ The server can be configured using the following environment variables:
 - **Network Security**: When using TCP4 mode, restrict connectivity to the Runtime API port
 - **Unix Socket Permissions**: When using Unix socket mode, ensure proper socket file permissions
 - **Input Validation**: All inputs are validated to prevent injection attacks
+
+For comprehensive security best practices and configuration examples, see the [HAProxy Configuration Guide](haproxy.md#security-considerations).
 
 ## Development
 
@@ -169,19 +179,9 @@ export HAPROXY_PORT="9999"
 go test ./internal/haproxy -v -run Test
 ```
 
-### Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Testing Locally
-
 You can test the HAProxy MCP server locally in several ways:
 
-### Direct CLI Testing
+#### Direct CLI Testing
 
 Build and run the server directly with environment variables:
 
@@ -190,19 +190,19 @@ Build and run the server directly with environment variables:
 go build -o bin/haproxy-mcp-server cmd/server/main.go
 
 # Option 1: Test with TCP connection mode
-HAPROXY_HOST=<your-haproxy-host> HAPROXY_PORT=9999 HAPROXY_RUNTIME_MODE=tcp4 LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
+HAPROXY_HOST=<your-haproxy-host> HAPROXY_PORT=9999 HAPROXY_RUNTIME_MODE=tcp4 HAPROXY_RUNTIME_TIMEOUT=10 LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
 
 # Option 2: Test with Unix socket mode
-HAPROXY_RUNTIME_MODE=unix HAPROXY_RUNTIME_SOCKET=/path/to/haproxy.sock LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
+HAPROXY_RUNTIME_MODE=unix HAPROXY_RUNTIME_SOCKET=/path/to/haproxy.sock HAPROXY_RUNTIME_TIMEOUT=10 LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
 
 # Option 3: Test with Stats page integration
-HAPROXY_STATS_ENABLED=true HAPROXY_STATS_URL="http://localhost:8404/stats" LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
+HAPROXY_STATS_ENABLED=true HAPROXY_STATS_URL="http://localhost:8404/stats" HAPROXY_STATS_TIMEOUT=5 LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
 
 # Option 4: Test with both Runtime API and Stats page
-HAPROXY_HOST=<your-haproxy-host> HAPROXY_PORT=9999 HAPROXY_RUNTIME_MODE=tcp4 HAPROXY_STATS_ENABLED=true HAPROXY_STATS_URL="http://localhost:8404/stats" LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
+HAPROXY_HOST=<your-haproxy-host> HAPROXY_PORT=9999 HAPROXY_RUNTIME_MODE=tcp4 HAPROXY_RUNTIME_TIMEOUT=10 HAPROXY_STATS_ENABLED=true HAPROXY_STATS_URL="http://localhost:8404/stats" HAPROXY_STATS_TIMEOUT=5 LOG_LEVEL=debug MCP_TRANSPORT=stdio ./bin/haproxy-mcp-server
 ```
 
-### Test Individual MCP Tools
+#### Test Individual MCP Tools
 
 You can test specific MCP tools with JSON-RPC calls:
 
@@ -214,76 +214,20 @@ echo '{"jsonrpc":"2.0","id":1,"method":"callTool","params":{"name":"show_info","
 echo '{"jsonrpc":"2.0","id":2,"method":"callTool","params":{"name":"show_stat","arguments":{"filter":""}}}' | HAPROXY_HOST=<your-haproxy-host> HAPROXY_PORT=9999 HAPROXY_RUNTIME_MODE=tcp4 LOG_LEVEL=debug ./bin/haproxy-mcp-server
 ```
 
-### Test with Claude or Other LLMs
+### Technical Implementation
 
-Create a configuration file:
+The HAProxy MCP Server includes several technical improvements designed for reliability and robustness:
 
-```bash
-cat > haproxy-mcp-config.json << EOF
-{
-  "mcpServers": {
-    "haproxy": {
-      "command": "$(pwd)/bin/haproxy-mcp-server",
-      "env": {
-        "HAPROXY_HOST": "<your-haproxy-host>",
-        "HAPROXY_PORT": "9999",
-        "HAPROXY_RUNTIME_MODE": "tcp4",
-        "MCP_TRANSPORT": "stdio",
-        "LOG_LEVEL": "debug"
-      }
-    }
-  }
-}
-EOF
-```
+- **Context-Aware Operations**: All API calls support context-based timeout and cancellation, allowing graceful termination of long-running operations.
+- **Fallback Mechanisms**: Automatic fallback to socat if direct connection fails, ensuring compatibility across different HAProxy deployments.
+- **Unified Socket Handling**: Common code for both TCP and Unix socket connections, reducing duplication and improving maintainability.
+- **Resilient Connection Management**: Dynamic buffer management for large responses and proper resource cleanup with deadline handling.
+- **Comprehensive Error Handling**: Structured error handling and logging for easier troubleshooting.
 
-Then connect using a Claude-compatible client:
+### Contributing
 
-```bash
-claude --mcp-servers-file ./haproxy-mcp-config.json
-```
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-### Verify HAProxy Connection Separately
+## License
 
-Before testing the MCP server, verify that your HAProxy setup is working correctly:
-
-```bash
-# For TCP connections
-echo "show info" | socat tcp-connect:<your-haproxy-host>:9999 stdio
-
-# For Unix socket connections
-echo "show info" | socat unix-connect:/path/to/haproxy.sock stdio
-```
-
-This helps to confirm that your HAProxy instance is correctly configured to accept Runtime API commands.
-
-## Stats Page Integration
-
-The HAProxy MCP Server supports integration with HAProxy's statistics page, which provides a wealth of information about your HAProxy instance through a web interface.
-
-### Benefits of Stats Page Integration
-
-- **Enhanced Metrics**: Access to detailed metrics that may not be available through the Runtime API
-- **Visualization**: Web-based view of HAProxy metrics for easier analysis
-- **Fallback Mechanism**: Provides an alternative data source if the Runtime API is unavailable
-- **Complementary Data**: Combines with Runtime API data for a more complete picture of your HAProxy instance
-
-### Configuring the Stats Page in HAProxy
-
-To enable the stats page in your HAProxy configuration:
-
-```
-frontend stats
-    bind *:8404
-    stats enable
-    stats uri /stats
-    stats refresh 10s
-    stats admin if LOCALHOST
-```
-
-Then configure the HAProxy MCP Server to use this stats page by setting the appropriate environment variables:
-
-```
-HAPROXY_STATS_ENABLED=true
-HAPROXY_STATS_URL=http://localhost:8404/stats
-```
+This project is licensed under the MIT License - see the LICENSE file for details.
