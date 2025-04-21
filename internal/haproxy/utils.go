@@ -2,24 +2,8 @@ package haproxy
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
-
-// splitAndTrim splits a string by newlines and trims each line, returning only non-empty lines
-func splitAndTrim(s string) []string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	result := make([]string, 0, len(lines))
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
-}
 
 // parseCSVStats parses HAProxy stats output in CSV format
 func parseCSVStats(statsOutput string) ([]string, []map[string]string, error) {
@@ -52,20 +36,17 @@ func parseCSVStats(statsOutput string) ([]string, []map[string]string, error) {
 	return headers, results, nil
 }
 
-// parseAddressPort parses an address string that might contain a port
-func parseAddressPort(addr string) (address string, port int) {
-	address = addr
+// splitAndTrim splits a string by newline and trims each line
+func splitAndTrim(s string) []string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	result := make([]string, 0, len(lines))
 
-	// Some versions might include port in the address
-	if strings.Contains(addr, ":") {
-		parts := strings.Split(addr, ":")
-		address = parts[0]
-		if len(parts) > 1 {
-			if p, err := strconv.Atoi(parts[1]); err == nil {
-				port = p
-			}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			result = append(result, trimmed)
 		}
 	}
 
-	return address, port
+	return result
 }

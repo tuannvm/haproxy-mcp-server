@@ -4,26 +4,35 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 )
 
 // ListBackends returns a list of all HAProxy backends.
 func (c *HAProxyClient) ListBackends() ([]string, error) {
 	slog.Debug("Listing all HAProxy backends")
 
-	// Unfortunately, the client-native library doesn't have a direct method to list all backends
-	// We'll use GetStats method to get all stats and extract backend names
-	nativeStats := c.client.GetStats()
-	if nativeStats.Error != "" {
-		slog.Error("Failed to get stats for backends", "error", nativeStats.Error)
-		return nil, fmt.Errorf("failed to get stats for backends: %s", nativeStats.Error)
+	// Use show stat command to get all stats and extract backend names
+	result, err := c.ExecuteRuntimeCommand("show stat")
+	if err != nil {
+		slog.Error("Failed to get stats for backends", "error", err)
+		return nil, fmt.Errorf("failed to get stats for backends: %w", err)
 	}
 
-	// Extract backend names from stats
+	// Parse the result to extract backend names
+	_, stats, err := parseCSVStats(result)
+	if err != nil {
+		slog.Error("Failed to parse stats", "error", err)
+		return nil, fmt.Errorf("failed to parse stats: %w", err)
+	}
+
+	// Extract backend names
 	backendSet := make(map[string]bool)
-	for _, stat := range nativeStats.Stats {
+	for _, stat := range stats {
 		// Only process backend entries
-		if stat.Type == "backend" {
-			backendSet[stat.Name] = true
+		if statType, ok := stat["type"]; ok && statType == "backend" {
+			if name, ok := stat["pxname"]; ok && name != "" {
+				backendSet[name] = true
+			}
 		}
 	}
 
@@ -41,14 +50,22 @@ func (c *HAProxyClient) ListBackends() ([]string, error) {
 func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error) {
 	slog.Debug("Getting backend info", "backend", backendName)
 
-	// Get native stats directly
-	nativeStats := c.client.GetStats()
-	if nativeStats.Error != "" {
-		slog.Error("Failed to get backend stats", "backend", backendName, "error", nativeStats.Error)
-		return nil, fmt.Errorf("failed to get backend stats: %s", nativeStats.Error)
+	// Use show stat to get stats for this backend
+	cmd := fmt.Sprintf("show stat %s", backendName)
+	result, err := c.ExecuteRuntimeCommand(cmd)
+	if err != nil {
+		slog.Error("Failed to get backend stats", "backend", backendName, "error", err)
+		return nil, fmt.Errorf("failed to get backend stats: %w", err)
 	}
 
-	// Process data from native stats
+	// Parse the result
+	_, stats, err := parseCSVStats(result)
+	if err != nil {
+		slog.Error("Failed to parse stats", "error", err)
+		return nil, fmt.Errorf("failed to parse stats: %w", err)
+	}
+
+	// Process data from stats
 	backendInfo := &BackendInfo{
 		Name:    backendName,
 		Status:  "UNKNOWN", // Default status
@@ -57,114 +74,82 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 	}
 
 	foundBackend := false
-	for _, stat := range nativeStats.Stats {
+	for _, stat := range stats {
+		// Get the type and name
+		statType, hasType := stat["type"]
+		name, hasName := stat["pxname"]
+
 		// Find the backend entry
-		if stat.Type == "backend" && stat.Name == backendName {
+		if hasType && hasName && statType == "backend" && name == backendName {
 			foundBackend = true
 
-			// Save stat fields to our Stats map
-			if stat.Stats != nil {
-				// Extract status if available
-				if stat.Stats.Status != "" {
-					backendInfo.Status = stat.Stats.Status
-				}
+			// Extract status if available
+			if status, ok := stat["status"]; ok {
+				backendInfo.Status = status
+			}
 
-				// Extract sessions
-				if stat.Stats.Scur != nil {
-					backendInfo.Sessions = int(*stat.Stats.Scur)
-				}
-
-				// Extract other stats through reflection (limited support)
-				statsFields := map[string]interface{}{
-					"qcur":     stat.Stats.Qcur,
-					"qmax":     stat.Stats.Qmax,
-					"scur":     stat.Stats.Scur,
-					"smax":     stat.Stats.Smax,
-					"slim":     stat.Stats.Slim,
-					"stot":     stat.Stats.Stot,
-					"bin":      stat.Stats.Bin,
-					"bout":     stat.Stats.Bout,
-					"dreq":     stat.Stats.Dreq,
-					"dresp":    stat.Stats.Dresp,
-					"ereq":     stat.Stats.Ereq,
-					"econ":     stat.Stats.Econ,
-					"eresp":    stat.Stats.Eresp,
-					"wretr":    stat.Stats.Wretr,
-					"wredis":   stat.Stats.Wredis,
-					"status":   stat.Stats.Status,
-					"weight":   stat.Stats.Weight,
-					"act":      stat.Stats.Act,
-					"bck":      stat.Stats.Bck,
-					"chkfail":  stat.Stats.Chkfail,
-					"chkdown":  stat.Stats.Chkdown,
-					"lastchg":  stat.Stats.Lastchg,
-					"downtime": stat.Stats.Downtime,
-					"pid":      stat.Stats.Pid,
-					"iid":      stat.Stats.Iid,
-					"sid":      stat.Stats.Sid,
-					"throttle": stat.Stats.Throttle,
-					"lbtot":    stat.Stats.Lbtot,
-					"rate":     stat.Stats.Rate,
-					"rate_lim": stat.Stats.RateLim,
-					"rate_max": stat.Stats.RateMax,
-				}
-
-				for name, value := range statsFields {
-					if value != nil {
-						switch v := value.(type) {
-						case *int64:
-							if v != nil {
-								backendInfo.Stats[name] = fmt.Sprintf("%d", *v)
-							}
-						case *int:
-							if v != nil {
-								backendInfo.Stats[name] = fmt.Sprintf("%d", *v)
-							}
-						case string:
-							if v != "" {
-								backendInfo.Stats[name] = v
-							}
-						}
-					}
+			// Extract sessions
+			if scur, ok := stat["scur"]; ok {
+				if sessions, err := strconv.Atoi(scur); err == nil {
+					backendInfo.Sessions = sessions
 				}
 			}
-		} else if stat.Type == "server" && stat.BackendName == backendName {
+
+			// Copy all stats
+			for k, v := range stat {
+				backendInfo.Stats[k] = v
+			}
+		} else if hasType && hasName && statType == "server" && name == backendName {
 			// This is a server in the backend we're looking for
-			server := ServerInfo{
-				Name: stat.Name,
+			serverName, hasServerName := stat["svname"]
+			if !hasServerName {
+				continue
 			}
 
-			if stat.Stats != nil {
-				// Extract common server stats
-				if stat.Stats.Addr != "" {
-					// Use the utility function that returns the correct types
-					address, port := parseAddressPort(stat.Stats.Addr)
-					server.Address = address
-					server.Port = strconv.Itoa(port)
-				}
+			server := ServerInfo{
+				Name: serverName,
+			}
 
-				if stat.Stats.Status != "" {
-					server.Status = stat.Stats.Status
+			// Extract server info
+			if addr, ok := stat["addr"]; ok {
+				parts := strings.Split(addr, ":")
+				if len(parts) > 0 {
+					server.Address = parts[0]
+					if len(parts) > 1 {
+						server.Port = parts[1]
+					}
+				} else {
+					server.Address = addr
 				}
+			}
 
-				if stat.Stats.Weight != nil {
-					server.Weight = int(*stat.Stats.Weight)
+			if status, ok := stat["status"]; ok {
+				server.Status = status
+			}
+
+			if weight, ok := stat["weight"]; ok {
+				if w, err := strconv.Atoi(weight); err == nil {
+					server.Weight = w
 				}
+			}
 
-				if stat.Stats.CheckStatus != "" {
-					server.CheckStatus = stat.Stats.CheckStatus
+			if check, ok := stat["check_status"]; ok {
+				server.CheckStatus = check
+			}
+
+			if lastchg, ok := stat["lastchg"]; ok {
+				server.LastStatusChange = lastchg
+			}
+
+			if scur, ok := stat["scur"]; ok {
+				if conn, err := strconv.Atoi(scur); err == nil {
+					server.ActiveConnections = conn
 				}
+			}
 
-				if stat.Stats.Lastchg != nil {
-					server.LastStatusChange = fmt.Sprintf("%d", *stat.Stats.Lastchg)
-				}
-
-				if stat.Stats.Scur != nil {
-					server.ActiveConnections = int(*stat.Stats.Scur)
-				}
-
-				if stat.Stats.Stot != nil {
-					server.TotalConnections = int(*stat.Stats.Stot)
+			if stot, ok := stat["stot"]; ok {
+				if conn, err := strconv.Atoi(stot); err == nil {
+					server.TotalConnections = conn
 				}
 			}
 
@@ -185,10 +170,9 @@ func (c *HAProxyClient) GetBackendInfo(backendName string) (*BackendInfo, error)
 func (c *HAProxyClient) EnableBackend(backendName string) error {
 	slog.Debug("Enabling backend", "backend", backendName)
 
-	// Set the default-backend server state to ready
-	// Native client doesn't have a direct method to enable backends,
-	// but we can set the state of the default-backend server
-	err := c.client.SetServerState(backendName, "default-backend", ServerStateReady)
+	// Set the backend state to ready using direct command
+	cmd := fmt.Sprintf("set server %s/default-backend state ready", backendName)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to enable backend", "backend", backendName, "error", err)
 		return fmt.Errorf("failed to enable backend %s: %w", backendName, err)
@@ -202,10 +186,9 @@ func (c *HAProxyClient) EnableBackend(backendName string) error {
 func (c *HAProxyClient) DisableBackend(backendName string) error {
 	slog.Debug("Disabling backend", "backend", backendName)
 
-	// Set the default-backend server state to maint
-	// Native client doesn't have a direct method to disable backends,
-	// but we can set the state of the default-backend server
-	err := c.client.SetServerState(backendName, "default-backend", ServerStateMaint)
+	// Set the backend state to maint using direct command
+	cmd := fmt.Sprintf("set server %s/default-backend state maint", backendName)
+	_, err := c.ExecuteRuntimeCommand(cmd)
 	if err != nil {
 		slog.Error("Failed to disable backend", "backend", backendName, "error", err)
 		return fmt.Errorf("failed to disable backend %s: %w", backendName, err)
@@ -250,12 +233,12 @@ func (c *HAProxyClient) GetBackendDetails(backend string) (map[string]interface{
 			"weight":             server.Weight,
 			"check_status":       server.CheckStatus,
 			"last_status_change": server.LastStatusChange,
-			"total_connections":  server.TotalConnections,
 			"active_connections": server.ActiveConnections,
+			"total_connections":  server.TotalConnections,
 		}
 		servers = append(servers, serverMap)
 	}
-	result["servers"] = servers
 
+	result["servers"] = servers
 	return result, nil
 }

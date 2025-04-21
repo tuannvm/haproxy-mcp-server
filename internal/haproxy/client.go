@@ -10,41 +10,33 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/haproxytech/client-native/v6/runtime"
 )
 
 // NewHAProxyClient creates a new HAProxy client
 func NewHAProxyClient(runtimeAPIURL string) (*HAProxyClient, error) {
-	client := &HAProxyClient{
-		RuntimeAPIURL: runtimeAPIURL,
-		Mode:          ClientModeDirect,
-	}
-
-	// Test direct connection first
-	slog.Debug("Testing direct connection to HAProxy Runtime API", "url", runtimeAPIURL)
-
 	// Parse URL to determine connection type
 	u, err := url.Parse(runtimeAPIURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse runtime API URL: %w", err)
 	}
 
-	var testCmd string
+	// Validate URL scheme
 	switch u.Scheme {
 	case "unix":
-		// For unix sockets, use socat to test connection
-		testCmd = fmt.Sprintf("echo 'show info' | socat %s stdio", runtimeAPIURL)
-		slog.Debug("Testing unix socket connection", "command", testCmd)
+		slog.Debug("Initializing client for Unix socket connection", "path", u.Path)
 	case "tcp":
-		// For TCP, test connection directly
-		testCmd = fmt.Sprintf("echo 'show info' | socat %s stdio", runtimeAPIURL)
-		slog.Debug("Testing TCP connection", "command", testCmd)
+		slog.Debug("Initializing client for TCP connection", "host", u.Host)
 	default:
 		return nil, fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
 	}
 
-	// Execute test connection
+	client := &HAProxyClient{
+		RuntimeAPIURL: runtimeAPIURL,
+		ParsedURL:     u,
+		Mode:          ClientModeDirect,
+	}
+
+	// Test direct connection by executing a simple command
 	_, err = client.ExecuteRuntimeCommand("show info")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to HAProxy Runtime API: %w", err)
@@ -53,22 +45,6 @@ func NewHAProxyClient(runtimeAPIURL string) (*HAProxyClient, error) {
 	slog.Info("Successfully connected to HAProxy Runtime API", "url", runtimeAPIURL, "mode", client.Mode)
 
 	return client, nil
-}
-
-// testDirectConnection tests if we can directly connect to HAProxy without the client-native library
-func (c *HAProxyClient) testDirectConnection() error {
-	// Test the connection by sending a simple command
-	result, err := c.executeDirectCommand("help")
-	if err != nil {
-		return err
-	}
-
-	if result == "" {
-		return fmt.Errorf("empty response from HAProxy")
-	}
-
-	slog.Debug("Direct connection test successful", "response_length", len(result))
-	return nil
 }
 
 // executeDirectCommand executes a command directly via TCP or Unix socket
@@ -92,7 +68,11 @@ func (c *HAProxyClient) executeDirectTCPCommand(command string) (string, error) 
 		// Try using socat if direct connection fails
 		return c.executeSocatTCPCommand(command)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			slog.Error("Error closing TCP connection", "error", closeErr)
+		}
+	}()
 	slog.Debug("Successfully established TCP connection to HAProxy")
 
 	// Set deadlines
@@ -134,7 +114,11 @@ func (c *HAProxyClient) executeDirectUnixCommand(command string) (string, error)
 		// Try using socat if direct connection fails
 		return c.executeSocatUnixCommand(command)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			slog.Error("Error closing Unix socket connection", "error", closeErr)
+		}
+	}()
 
 	// Set deadlines
 	err = conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -221,13 +205,6 @@ func (c *HAProxyClient) executeSocatUnixCommand(command string) (string, error) 
 	}
 
 	return out.String(), nil
-}
-
-// Runtime returns the underlying native runtime client.
-// This method is maintained for backward compatibility but is no longer used.
-func (c *HAProxyClient) Runtime() runtime.Runtime {
-	slog.Debug("Runtime() called, but no native client is available in direct mode")
-	return nil
 }
 
 // ExecuteRuntimeCommand executes a command on HAProxy's Runtime API and processes the response.

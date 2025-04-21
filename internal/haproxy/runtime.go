@@ -454,19 +454,13 @@ func (c *HAProxyClient) DisableAgent(backend, server string) error {
 func (c *HAProxyClient) ReloadHAProxy() error {
 	slog.Info("Reloading HAProxy configuration")
 
-	// Get the runtime client
-	runtimeClient := c.Runtime()
-
-	// Try to reload HAProxy via the socket
-	result, err := runtimeClient.Reload()
+	// Execute the reload command directly
+	result, err := c.ExecuteRuntimeCommand("reload")
 	if err != nil {
-		slog.Error("Failed to reload HAProxy via socket", "error", err)
-
-		// If the runtime reload fails, log and return the error
-		// In strict Runtime API mode, we shouldn't try configuration reload
-		return fmt.Errorf("failed to reload HAProxy via runtime API: %w", err)
+		slog.Error("Failed to reload HAProxy", "error", err)
+		return fmt.Errorf("failed to reload HAProxy: %w", err)
 	}
 
-	slog.Info("HAProxy reloaded via socket", "result", result)
+	slog.Info("HAProxy reloaded successfully", "result", result)
 	return nil
 }

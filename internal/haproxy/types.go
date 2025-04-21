@@ -2,8 +2,6 @@ package haproxy
 
 import (
 	"net/url"
-
-	"github.com/haproxytech/client-native/v6/runtime"
 )
 
 // Server states
@@ -29,7 +27,7 @@ const (
 type HAProxyClientMode int
 
 const (
-	// ClientModeNative uses the HAProxytech/client-native library
+	// ClientModeNative is kept for API compatibility but is no longer supported
 	ClientModeNative HAProxyClientMode = iota
 	// ClientModeDirect uses direct socket connection (TCP or Unix)
 	ClientModeDirect
@@ -39,7 +37,6 @@ const (
 type HAProxyClient struct {
 	RuntimeAPIURL    string
 	ConfigurationURL string
-	client           runtime.Runtime
 	ParsedURL        *url.URL
 	Mode             HAProxyClientMode
 }
