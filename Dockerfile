@@ -34,9 +34,6 @@ WORKDIR /app
 # Copy the built binary from the builder stage
 COPY --from=builder /haproxy-mcp-server .
 
-# Copy documentation for reference
-COPY README.md haproxy.md ./
-
 # Default environment variables for HAProxy connection
 ENV HAPROXY_HOST="127.0.0.1"
 ENV HAPROXY_PORT="9999"
