@@ -5,8 +5,10 @@ FROM golang:1.24-alpine AS builder
 # Set the Current Working Directory inside the container
 WORKDIR /app
 
-# Copy go mod and sum files
-COPY go.mod go.sum ./
+# Copy go mod file (required)
+COPY go.mod ./
+# Copy go sum file if it exists
+COPY go.sum* ./
 
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
 RUN go mod download
