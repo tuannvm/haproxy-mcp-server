@@ -77,13 +77,8 @@ docker_manifests:
 dockers:
   - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-amd64
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/**/*
-      - internal/**/*
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -93,13 +88,8 @@ dockers:
     goarch: amd64
   - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-arm64
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/**/*
-      - internal/**/*
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -109,13 +99,8 @@ dockers:
     goarch: arm64
   - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv6
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/**/*
-      - internal/**/*
     build_flag_templates:
       - "--platform=linux/arm/v6"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -126,13 +111,8 @@ dockers:
     goarm: 6
   - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv7
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/**/*
-      - internal/**/*
     build_flag_templates:
       - "--platform=linux/arm/v7"
       - "--label=org.opencontainers.image.created={{.Date}}"

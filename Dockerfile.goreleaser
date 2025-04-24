@@ -1,0 +1,25 @@
+# This Dockerfile is specifically for GoReleaser
+# It expects the binary to be already built and available in the build context
+
+FROM alpine:latest
+
+# Add ca-certificates in case TLS connections need system CAs
+# Add socat for fallback connection method to HAProxy
+RUN apk --no-cache add ca-certificates socat
+
+# Set the Current Working Directory inside the container
+WORKDIR /app
+
+# Copy the pre-built binary from the GoReleaser build context
+COPY {{ .ProjectName }} .
+
+# Default environment variables for HAProxy connection
+ENV HAPROXY_HOST="127.0.0.1"
+ENV HAPROXY_PORT="9999"
+ENV HAPROXY_RUNTIME_MODE="tcp4"
+ENV HAPROXY_RUNTIME_TIMEOUT="10"
+ENV HAPROXY_STATS_ENABLED="true"
+ENV HAPROXY_STATS_URL="http://127.0.0.1:8404/stats"
+
+# Command to run
+ENTRYPOINT ["/app/{{ .ProjectName }}"]
