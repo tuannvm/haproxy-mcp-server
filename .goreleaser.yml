@@ -73,59 +73,51 @@ docker_manifests:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv6
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv7
 
-# Common settings for all Docker builds
-docker_build_common: &docker_build_common
-  dockerfile: Dockerfile
-  use: buildx
-  extra_files:
-    - go.mod
-    - go.sum
-    - cmd/**/*
-    - internal/**/*
-
-# Common labels for all Docker builds
-docker_labels: &docker_labels
-  - "--label=org.opencontainers.image.created={{.Date}}"
-  - "--label=org.opencontainers.image.title={{.ProjectName}}"
-  - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-  - "--label=org.opencontainers.image.version={{.Version}}"
-
 # Multi-architecture Docker builds
 dockers:
-  # AMD64 build
-  - <<: *docker_build_common
-    image_templates:
+  - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-amd64
+    dockerfile: Dockerfile
+    use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
-      - *docker_labels
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     goarch: amd64
-
-  # ARM64 build
-  - <<: *docker_build_common
-    image_templates:
+  - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-arm64
+    dockerfile: Dockerfile
+    use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"
-      - *docker_labels
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     goarch: arm64
-
-  # ARMv6 build
-  - <<: *docker_build_common
-    image_templates:
+  - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv6
+    dockerfile: Dockerfile
+    use: buildx
     build_flag_templates:
       - "--platform=linux/arm/v6"
-      - *docker_labels
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     goarch: arm
     goarm: 6
-
-  # ARMv7 build
-  - <<: *docker_build_common
-    image_templates:
+  - image_templates:
       - ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}-armv7
+    dockerfile: Dockerfile
+    use: buildx
     build_flag_templates:
       - "--platform=linux/arm/v7"
-      - *docker_labels
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     goarch: arm
     goarm: 7
