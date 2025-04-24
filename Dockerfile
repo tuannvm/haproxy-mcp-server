@@ -14,10 +14,13 @@ RUN go mod download
 # Copy the source code into the container
 COPY . .
 
+# Binary name can be overridden at build time
+ARG BINARY_NAME=app
+
 # Build the Go app
 # -ldflags="-w -s" reduces the size of the binary by removing debug information.
 # CGO_ENABLED=0 disables CGO for static linking, useful for alpine base images.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /haproxy-mcp-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /${BINARY_NAME} ./cmd/server
 
 # --- Start final stage --- #
 
@@ -31,8 +34,11 @@ RUN apk --no-cache add ca-certificates socat
 # Set the Current Working Directory inside the container
 WORKDIR /app
 
+# Binary name can be overridden at build time
+ARG BINARY_NAME=app
+
 # Copy the built binary from the builder stage
-COPY --from=builder /haproxy-mcp-server .
+COPY --from=builder /${BINARY_NAME} .
 
 # Default environment variables for HAProxy connection
 ENV HAPROXY_HOST="127.0.0.1"
@@ -50,4 +56,4 @@ ENV LOG_LEVEL="info"
 EXPOSE ${MCP_PORT}
 
 # Command to run the executable
-ENTRYPOINT ["/app/haproxy-mcp-server"]
+ENTRYPOINT ["/app/${BINARY_NAME}"]
