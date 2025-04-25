@@ -5,7 +5,7 @@ before:
 
 builds:
   - main: ./cmd/server/main.go
-    binary: "{{.Env.GITHUB_REPOSITORY_NAME | default .ProjectName}}"
+    binary: "{{ .ProjectName }}"
     env:
       - CGO_ENABLED=0
     goos:
@@ -47,7 +47,7 @@ changelog:
 release:
   github:
     owner: "{{.Env.GITHUB_REPOSITORY_OWNER}}"
-    name: "{{.Env.GITHUB_REPOSITORY_NAME | default .ProjectName}}"
+    name: "{{.Env.GITHUB_REPOSITORY_NAME}}"
   draft: false
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
