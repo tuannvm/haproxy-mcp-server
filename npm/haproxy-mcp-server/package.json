@@ -1,0 +1,43 @@
+{
+  "name": "haproxy-mcp-server",
+  "version": "0.1.0",
+  "description": "A Model Context Protocol (MCP) server for HAProxy",
+  "bin": {
+    "haproxy-mcp-server": "./bin/index.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuannvm/haproxy-mcp-server.git"
+  },
+  "keywords": [
+    "haproxy",
+    "mcp",
+    "model",
+    "context",
+    "protocol",
+    "server",
+    "ai",
+    "llm"
+  ],
+  "author": "tuannvm",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tuannvm/haproxy-mcp-server/issues"
+  },
+  "homepage": "https://github.com/tuannvm/haproxy-mcp-server#readme",
+  "dependencies": {},
+  "optionalDependencies": {
+    "haproxy-mcp-server-darwin-amd64": "0.1.0",
+    "haproxy-mcp-server-darwin-arm64": "0.1.0",
+    "haproxy-mcp-server-linux-amd64": "0.1.0",
+    "haproxy-mcp-server-linux-arm64": "0.1.0",
+    "haproxy-mcp-server-windows-amd64": "0.1.0",
+    "haproxy-mcp-server-windows-arm64": "0.1.0"
+  }
+}
