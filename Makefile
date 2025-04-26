@@ -30,7 +30,7 @@ test:
 
 # Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(CLEAN_TARGETS)
 
 # Run the application in development mode
 run-dev:
@@ -65,6 +65,13 @@ lint:
 	@if ! command -v golangci-lint &> /dev/null; then echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; fi
 	@golangci-lint run --timeout=5m
 
+
+.PHONY: build-all-platforms
+build-all-platforms: clean tidy format ## Build the project for all platforms
+	$(foreach os,$(OSES),$(foreach arch,$(ARCHS), \
+		GOOS=$(os) GOARCH=$(arch) go build $(COMMON_BUILD_ARGS) -o $(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,) ./cmd/$(BINARY_NAME); \
+	))
+
 .PHONY: npm
 npm: build-all-platforms ## Create the npm packages
 	$(foreach os,$(OSES),$(foreach arch,$(ARCHS), \
@@ -81,13 +88,9 @@ npm-publish: npm ## Publish the npm packages
 		cd npm/$$DIRNAME; \
 		echo '//registry.npmjs.org/:_authToken=\$(NPM_TOKEN)' >> .npmrc; \
 		jq '.version = "$(NPM_VERSION)"' package.json > tmp.json && mv tmp.json package.json; \
-		echo npm publish; \
+		npm publish --access public; \
 		cd ../..; \
 	))
-	echo '//registry.npmjs.org/:_authToken=\$(NPM_TOKEN)' >> ./npm/.npmrc
-	jq '.version = "$(NPM_VERSION)"' ./npm/package.json > tmp.json && mv tmp.json ./npm/package.json; \
-	jq '.optionalDependencies |= with_entries(.value = "$(NPM_VERSION)")' ./npm/package.json > tmp.json && mv tmp.json ./npm/package.json; \
-	cd npm && echo npm publish
 
 # Default target
-all: clean build 
+all: clean build
