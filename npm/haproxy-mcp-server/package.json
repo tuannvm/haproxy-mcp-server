@@ -1,12 +1,13 @@
 {
   "name": "haproxy-mcp-server",
-  "version": "0.1.0",
+  "version": "1.0.10-3-gdb1aa6a-dirty",
   "description": "A Model Context Protocol (MCP) server for HAProxy",
   "bin": {
     "haproxy-mcp-server": "./bin/index.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "README.md"
   ],
   "engines": {
     "node": ">=14"
@@ -31,13 +32,5 @@
     "url": "https://github.com/tuannvm/haproxy-mcp-server/issues"
   },
   "homepage": "https://github.com/tuannvm/haproxy-mcp-server#readme",
-  "dependencies": {},
-  "optionalDependencies": {
-    "haproxy-mcp-server-darwin-amd64": "0.1.0",
-    "haproxy-mcp-server-darwin-arm64": "0.1.0",
-    "haproxy-mcp-server-linux-amd64": "0.1.0",
-    "haproxy-mcp-server-linux-arm64": "0.1.0",
-    "haproxy-mcp-server-windows-amd64": "0.1.0",
-    "haproxy-mcp-server-windows-arm64": "0.1.0"
-  }
+  "dependencies": {}
 }

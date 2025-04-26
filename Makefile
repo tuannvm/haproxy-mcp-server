@@ -7,6 +7,7 @@ BUILD_DIR=bin
 NPM_VERSION ?= $(shell echo $(VERSION) | sed 's/^v//')
 COMMIT_HASH ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+COMMON_BUILD_ARGS = -ldflags "-X github.com/tuannvm/haproxy-mcp-server/internal/version.Version=$(VERSION) -X github.com/tuannvm/haproxy-mcp-server/internal/version.CommitHash=$(COMMIT_HASH) -X github.com/tuannvm/haproxy-mcp-server/internal/version.BuildTime=$(BUILD_TIME) -X github.com/tuannvm/haproxy-mcp-server/internal/version.BinaryName=$(BINARY_NAME)"
 
 # Define OS and architecture combinations
 OSES = darwin linux windows
@@ -30,7 +31,18 @@ test:
 
 # Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR) $(CLEAN_TARGETS)
+	rm -rf $(BUILD_DIR)
+	rm -f $(BINARY_NAME) $(foreach os,$(OSES),$(foreach arch,$(ARCHS),$(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,)))
+	find ./npm -name ".npmrc" -type f -delete
+	find ./npm -name "tmp.json" -type f -delete
+
+.PHONY: format
+format: ## Format the code
+	go fmt ./...
+
+.PHONY: tidy
+tidy: ## Tidy up the go modules
+	go mod tidy
 
 # Run the application in development mode
 run-dev:
@@ -68,29 +80,58 @@ lint:
 
 .PHONY: build-all-platforms
 build-all-platforms: clean tidy format ## Build the project for all platforms
+	@echo "Building for all platforms..."
 	$(foreach os,$(OSES),$(foreach arch,$(ARCHS), \
-		GOOS=$(os) GOARCH=$(arch) go build $(COMMON_BUILD_ARGS) -o $(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,) ./cmd/$(BINARY_NAME); \
+		echo "Building for $(os)/$(arch)"; \
+		GOOS=$(os) GOARCH=$(arch) go build $(COMMON_BUILD_ARGS) -o $(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,) ./cmd/server; \
 	))
 
 .PHONY: npm
 npm: build-all-platforms ## Create the npm packages
+	# Create binaries directory in the main package
+	mkdir -p ./npm/$(BINARY_NAME)/bin/binaries
+	
+	# Copy all binaries to the main package
 	$(foreach os,$(OSES),$(foreach arch,$(ARCHS), \
 		EXECUTABLE=./$(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,); \
-		DIRNAME=$(BINARY_NAME)-$(os)-$(arch); \
-		mkdir -p ./npm/$$DIRNAME/bin; \
-		cp $$EXECUTABLE ./npm/$$DIRNAME/bin/; \
+		BINARY_NAME_WITH_SUFFIX=$(BINARY_NAME)-$(os)-$(arch)$(if $(findstring windows,$(os)),.exe,); \
+		cp $$EXECUTABLE ./npm/$(BINARY_NAME)/bin/binaries/$$BINARY_NAME_WITH_SUFFIX; \
 	))
+	
+	# Copy README.md to the npm package
+	cp README.md ./npm/$(BINARY_NAME)/
+	
+	# Ensure index.js is executable
+	chmod +x ./npm/$(BINARY_NAME)/bin/index.js
 
 .PHONY: npm-publish
-npm-publish: npm ## Publish the npm packages
-	$(foreach os,$(OSES),$(foreach arch,$(ARCHS), \
-		DIRNAME="$(BINARY_NAME)-$(os)-$(arch)"; \
-		cd npm/$$DIRNAME; \
-		echo '//registry.npmjs.org/:_authToken=\$(NPM_TOKEN)' >> .npmrc; \
-		jq '.version = "$(NPM_VERSION)"' package.json > tmp.json && mv tmp.json package.json; \
-		npm publish --access public; \
-		cd ../..; \
-	))
+npm-publish: npm ## Publish the npm package
+	@if [ -z "$$NPM_TOKEN" ]; then \
+		echo "Error: NPM_TOKEN environment variable is not set"; \
+		echo "Please set it with: export NPM_TOKEN=your_npm_token"; \
+		exit 1; \
+	fi
+	
+	# Set version in package.json
+	cd npm/$(BINARY_NAME); \
+	echo "//registry.npmjs.org/:_authToken=$$NPM_TOKEN" > .npmrc; \
+	jq '.version = "$(NPM_VERSION)"' package.json > tmp.json && mv tmp.json package.json; \
+	echo "Publishing version $(NPM_VERSION)..."; \
+	npm publish --access public; \
+	cd ../..
+
+.PHONY: npm-publish-dry-run
+npm-publish-dry-run: npm ## Test npm packaging without actually publishing
+	@echo "Performing a dry run of npm packaging process..."
+	cd npm/$(BINARY_NAME); \
+	jq '.version = "$(NPM_VERSION)"' package.json > tmp.json && mv tmp.json package.json; \
+	npm pack; \
+	cd ../..
+
+.PHONY: npm-login
+npm-login: ## Login to npm registry
+	@echo "Logging in to npm registry..."
+	@npm login
 
 # Default target
 all: clean build
