@@ -7,6 +7,11 @@ on:
     types:
       - completed
 
+env:
+  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  GO_VERSION: "1.24"
+  REGISTRY: ghcr.io
+
 permissions:
   contents: write
   packages: write
@@ -90,6 +95,12 @@ jobs:
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
           GORELEASER_CURRENT_TAG: v${{ steps.extract_version.outputs.version }}
 
+      - name: Publish npm
+        run: |
+          make npm-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
 
   # Build and publish Docker image with semantic version tags
   publish-docker-image:
@@ -148,6 +159,3 @@ jobs:
           provenance: true
           sbom: true
 
-env:
-  GO_VERSION: "1.24"
-  REGISTRY: ghcr.io

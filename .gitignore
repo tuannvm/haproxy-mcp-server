@@ -27,5 +27,13 @@ go.work.sum
 .idea/
 .vscode/
 
+# Node.js
+node_modules/
+.npm/
+.npmrc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Build output
 bin/

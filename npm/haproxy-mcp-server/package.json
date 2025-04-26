@@ -1,0 +1,36 @@
+{
+  "name": "haproxy-mcp-server",
+  "version": "1.0.10-3-gdb1aa6a-dirty",
+  "description": "A Model Context Protocol (MCP) server for HAProxy",
+  "bin": {
+    "haproxy-mcp-server": "./bin/index.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuannvm/haproxy-mcp-server.git"
+  },
+  "keywords": [
+    "haproxy",
+    "mcp",
+    "model",
+    "context",
+    "protocol",
+    "server",
+    "ai",
+    "llm"
+  ],
+  "author": "tuannvm",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tuannvm/haproxy-mcp-server/issues"
+  },
+  "homepage": "https://github.com/tuannvm/haproxy-mcp-server#readme",
+  "dependencies": {}
+}
