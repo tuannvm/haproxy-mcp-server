@@ -1,0 +1,37 @@
+name: Update Homebrew Cask on Release
+
+on:
+  release:
+    types: [published]
+
+env:
+  TAP: Homebrew/homebrew-cask
+  ORG: Homebrew
+  HOMEBREW_SIMULATE_MACOS_ON_LINUX: 1
+
+jobs:
+  bump-cask:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repo
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew on Linux
+        run: |
+          NONINTERACTIVE=1 bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> $GITHUB_ENV
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+      - name: Update Homebrew
+        run: brew update
+
+      - name: Auto-bump or create Cask
+        uses: macauley/action-homebrew-bump-cask@v1
+        with:
+          token: ${{ secrets.PAT }}
+          tap: ${{ env.TAP }}
+          cask: ${{ github.event.repository.name }}
+          tag: ${{ github.event.release.tag_name }}
+          org: ${{ env.ORG }}
+          new_cask: true

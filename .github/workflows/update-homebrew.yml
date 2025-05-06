@@ -5,13 +5,7 @@ on:
     workflows: ["Release Pipeline"]
     types: [completed]
     branches: [main]
-
-env:
-  TAP: Homebrew/homebrew-cask
-  CASK: ${{ github.event.repository.name }}
-  ORG: Homebrew
-  HOMEBREW_SIMULATE_MACOS_ON_LINUX: 1
-
+    
 jobs:
   trigger-homebrew-update:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
@@ -28,34 +22,4 @@ jobs:
           repository: tuannvm/homebrew-mcp
           event-type: update-formula
           client-payload: '{"repository": "${{ github.repository }}", "formula": "${{ steps.repo-name.outputs.REPO_NAME }}.rb"}' 
-
-  bump-cask:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout your repo
-        uses: actions/checkout@v4
-
-      - name: Install Homebrew on Linux
-        run: |
-          NONINTERACTIVE=1 bash -c \
-            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> $GITHUB_ENV
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-
-      - name: Update Homebrew
-        run: brew update
-
-      - name: Auto-bump or create Cask
-        uses: macauley/action-homebrew-bump-cask@v1
-        with:
-          token: ${{ secrets.PAT }}
-          tap: ${{ env.TAP }}
-          cask: ${{ env.CASK }}
-          tag: ${{ github.event.release.tag_name }}
-          org: ${{ env.ORG }}
-          new_cask: true
-
-      - name: Push bump branch (manual only)
-        if: github.event_name == 'workflow_dispatch'
-        run: git push --set-upstream origin HEAD
+          
