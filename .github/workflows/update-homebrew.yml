@@ -5,7 +5,7 @@ on:
     workflows: ["Release Pipeline"]
     types: [completed]
     branches: [main]
-
+    
 jobs:
   trigger-homebrew-update:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
@@ -22,3 +22,4 @@ jobs:
           repository: tuannvm/homebrew-mcp
           event-type: update-formula
           client-payload: '{"repository": "${{ github.repository }}", "formula": "${{ steps.repo-name.outputs.REPO_NAME }}.rb"}' 
+          
