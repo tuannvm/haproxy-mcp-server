@@ -1,0 +1,19 @@
+{
+  "name": "haproxy-mcp-server-darwin-amd64",
+  "version": "1.0.10-3-gdb1aa6a-dirty",
+  "description": "macOS AMD64 binary for haproxy-mcp-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuannvm/haproxy-mcp-server.git"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  }
+}
