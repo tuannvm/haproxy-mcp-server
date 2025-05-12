@@ -12,6 +12,31 @@ import (
 	"github.com/tuannvm/haproxy-mcp-server/internal/haproxy"
 )
 
+ // callJSON handles executing a client call, error logging, and JSON marshalling
+ func callJSON(ctx context.Context, action string, mapKey string, fn func() (interface{}, error)) (*mcp.CallToolResult, error) {
+     v, err := fn()
+     if err != nil {
+         slog.ErrorContext(ctx, "Failed to "+action, "error", err)
+         return mcp.NewToolResultError(fmt.Sprintf("Failed to %s: %v", action, err)), nil
+     }
+     jsonData, err := json.Marshal(map[string]interface{}{mapKey: v})
+     if err != nil {
+         slog.ErrorContext(ctx, "Failed to marshal "+mapKey+" output", "error", err)
+         return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
+     }
+     return mcp.NewToolResultText(string(jsonData)), nil
+ }
+
+ // callExec handles executing a client call, error logging, and returning text
+ func callExec(ctx context.Context, action string, fn func() (string, error)) (*mcp.CallToolResult, error) {
+     v, err := fn()
+     if err != nil {
+         slog.ErrorContext(ctx, "Failed to "+action, "error", err)
+         return mcp.NewToolResultError(fmt.Sprintf("Failed to %s: %v", action, err)), nil
+     }
+     return mcp.NewToolResultText(v), nil
+ }
+
 // RegisterTools registers all defined HAProxy tools with the MCP server.
 func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	slog.Info("Registering HAProxy MCP tools...")
@@ -22,28 +47,17 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 
 	// --- show_stat tool ---
 	showStatTool := mcp.NewTool("show_stat",
-		mcp.WithDescription("Shows HAProxy statistics table (show stat command)"),
-		mcp.WithString("filter", mcp.Description("Optional filter for proxy or server names")),
+	    mcp.WithDescription("Shows HAProxy statistics table (show stat command)"),
+	    mcp.WithString("filter", mcp.Description("Optional filter for proxy or server names")),
 	)
 
 	s.AddTool(showStatTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		filter, _ := req.Params.Arguments["filter"].(string)
-		slog.InfoContext(ctx, "Executing show_stat tool", "filter", filter)
+	    filter, _ := req.Params.Arguments["filter"].(string)
+	    slog.InfoContext(ctx, "Executing show_stat tool", "filter", filter)
 
-		stats, err := client.ShowStat(filter)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get statistics", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get statistics: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"stats": stats})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal show_stat output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+	    return callJSON(ctx, "get statistics", "stats", func() (interface{}, error) {
+	        return client.ShowStat(filter)
+	    })
 	})
 
 	// --- show_info tool ---
@@ -52,22 +66,11 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(showInfoTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.InfoContext(ctx, "Executing show_info tool")
+	    slog.InfoContext(ctx, "Executing show_info tool")
 
-		info, err := client.GetRuntimeInfo()
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get runtime info", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get runtime info: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"info": info})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal show_info output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+	    return callJSON(ctx, "get runtime info", "info", func() (interface{}, error) {
+	        return client.GetRuntimeInfo()
+	    })
 	})
 
 	// --- debug_counters tool ---
@@ -76,22 +79,11 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(debugCountersTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.InfoContext(ctx, "Executing debug_counters tool")
+	    slog.InfoContext(ctx, "Executing debug_counters tool")
 
-		counters, err := client.DebugCounters()
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get debug counters", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get debug counters: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"counters": counters})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal debug_counters output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+	    return callJSON(ctx, "get debug counters", "counters", func() (interface{}, error) {
+	        return client.DebugCounters()
+	    })
 	})
 
 	// --- clear_counters_all tool ---
@@ -100,15 +92,13 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(clearCountersAllTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.InfoContext(ctx, "Executing clear_counters_all tool")
-
-		err := client.ClearCountersAll()
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to clear counters", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to clear counters: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText("All statistics counters have been reset successfully"), nil
+		        slog.InfoContext(ctx, "Executing clear_counters_all tool")
+		        return callExec(ctx, "clear counters", func() (string, error) {
+		            if err := client.ClearCountersAll(); err != nil {
+		                return "", err
+		            }
+		            return "All statistics counters have been reset successfully", nil
+		        })
 	})
 
 	// --- dump_stats_file tool ---
@@ -118,16 +108,15 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(dumpStatsFileTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		filepath, _ := req.Params.Arguments["filepath"].(string)
-		slog.InfoContext(ctx, "Executing dump_stats_file tool", "filepath", filepath)
-
-		result, err := client.DumpStatsFile(filepath)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to dump stats to file", "error", err, "filepath", filepath)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to dump stats to file: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Statistics dumped successfully to %s", result)), nil
+		        filepath, _ := req.Params.Arguments["filepath"].(string)
+		        slog.InfoContext(ctx, "Executing dump_stats_file tool", "filepath", filepath)
+		        return callExec(ctx, "dump stats to file", func() (string, error) {
+		            res, err := client.DumpStatsFile(filepath)
+		            if err != nil {
+		                return "", err
+		            }
+		            return fmt.Sprintf("Statistics dumped successfully to %s", res), nil
+		        })
 	})
 
 	// ============================================
@@ -140,25 +129,10 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(listBackendsTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.InfoContext(ctx, "Executing list_backends tool")
-
-		backends, err := client.GetBackends()
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to list backends", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to list backends: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		output := map[string]interface{}{
-			"backends": backends,
-		}
-		jsonData, err := json.Marshal(output)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal list_backends output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+		        slog.InfoContext(ctx, "Executing list_backends tool")
+		        return callJSON(ctx, "list backends", "backends", func() (interface{}, error) {
+		            return client.GetBackends()
+		        })
 	})
 
 	// --- get_backend tool ---
@@ -168,23 +142,11 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(getBackendTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		name, _ := req.Params.Arguments["name"].(string)
-		slog.InfoContext(ctx, "Executing get_backend tool", "backend_name", name)
-
-		backendDetails, err := client.GetBackendDetails(name)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get backend details", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get backend details: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"backend": backendDetails})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal get_backend output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+		        name, _ := req.Params.Arguments["name"].(string)
+		        slog.InfoContext(ctx, "Executing get_backend tool", "backend_name", name)
+		        return callJSON(ctx, "get backend details", "backend", func() (interface{}, error) {
+		            return client.GetBackendDetails(name)
+		        })
 	})
 
 	// --- show_servers_state tool ---
@@ -194,23 +156,11 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(showServersStateTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		slog.InfoContext(ctx, "Executing show_servers_state tool", "backend", backend)
-
-		serversState, err := client.ShowServersState(backend)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to show servers state", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to show servers state: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"servers_state": serversState})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal show_servers_state output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+		        backend, _ := req.Params.Arguments["backend"].(string)
+		        slog.InfoContext(ctx, "Executing show_servers_state tool", "backend", backend)
+		        return callJSON(ctx, "show servers state", "servers_state", func() (interface{}, error) {
+		            return client.ShowServersState(backend)
+		        })
 	})
 
 	// ============================================
@@ -224,28 +174,23 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(listServersTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		slog.InfoContext(ctx, "Executing list_servers tool", "backend", backend)
-
-		servers, err := client.ListServers(backend)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to list servers", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to list servers: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		output := map[string]interface{}{
-			"backend": backend,
-			"servers": servers,
-		}
-		jsonData, err := json.Marshal(output)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal list_servers output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			slog.InfoContext(ctx, "Executing list_servers tool", "backend", backend)
+			return callExec(ctx, "list servers", func() (string, error) {
+				servers, err := client.ListServers(backend)
+				if err != nil {
+					return "", err
+				}
+				b, err := json.Marshal(map[string]interface{}{
+					"backend": backend,
+					"servers": servers,
+				})
+				if err != nil {
+					return "", err
+				}
+				return string(b), nil
+			})
+		})
 
 	// --- get_server tool ---
 	getServerTool := mcp.NewTool("get_server",
@@ -255,25 +200,13 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(getServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing get_server tool", "backend", backend, "server", server)
-
-		serverDetails, err := client.GetServerDetails(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get server details", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get server details: %v", err)), nil
-		}
-
-		// Marshal result to JSON
-		jsonData, err := json.Marshal(map[string]interface{}{"server": serverDetails})
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to marshal get_server output", "error", err)
-			return mcp.NewToolResultError("Internal server error: failed to marshal results"), nil
-		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing get_server tool", "backend", backend, "server", server)
+			return callJSON(ctx, "get server details", "server", func() (interface{}, error) {
+				return client.GetServerDetails(backend, server)
+			})
+		})
 
 	// --- add_server tool ---
 	addServerTool := mcp.NewTool("add_server",
@@ -286,35 +219,29 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(addServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		name, _ := req.Params.Arguments["name"].(string)
-		addr, _ := req.Params.Arguments["addr"].(string)
-		portVal, portExists := req.Params.Arguments["port"]
-		weightVal, weightExists := req.Params.Arguments["weight"]
+			backend, _ := req.Params.Arguments["backend"].(string)
+			name, _ := req.Params.Arguments["name"].(string)
+			addr, _ := req.Params.Arguments["addr"].(string)
+			portVal, portExists := req.Params.Arguments["port"]
+			weightVal, weightExists := req.Params.Arguments["weight"]
 
-		var port, weight int
-		if portExists {
-			port = int(portVal.(float64))
-		}
-		if weightExists {
-			weight = int(weightVal.(float64))
-		}
+			var port, weight int
+			if portExists {
+				port = int(portVal.(float64))
+			}
+			if weightExists {
+				weight = int(weightVal.(float64))
+			}
 
-		slog.InfoContext(ctx, "Executing add_server tool",
-			"backend", backend,
-			"name", name,
-			"addr", addr,
-			"port", port,
-			"weight", weight)
-
-		err := client.AddServer(backend, name, addr, port, weight)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to add server", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to add server: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Server %s added successfully to backend %s", name, backend)), nil
-	})
+			slog.InfoContext(ctx, "Executing add_server tool",
+				"backend", backend, "name", name, "addr", addr, "port", port, "weight", weight)
+			return callExec(ctx, "add server", func() (string, error) {
+				if err := client.AddServer(backend, name, addr, port, weight); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Server %s added successfully to backend %s", name, backend), nil
+			})
+		})
 
 	// --- del_server tool ---
 	delServerTool := mcp.NewTool("del_server",
@@ -324,18 +251,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(delServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		name, _ := req.Params.Arguments["name"].(string)
-		slog.InfoContext(ctx, "Executing del_server tool", "backend", backend, "name", name)
-
-		err := client.DelServer(backend, name)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to delete server", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete server: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Server %s deleted successfully from backend %s", name, backend)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			name, _ := req.Params.Arguments["name"].(string)
+			slog.InfoContext(ctx, "Executing del_server tool", "backend", backend, "name", name)
+			return callExec(ctx, "delete server", func() (string, error) {
+				if err := client.DelServer(backend, name); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Server %s deleted successfully from backend %s", name, backend), nil
+			})
+		})
 
 	// --- enable_server tool ---
 	enableServerTool := mcp.NewTool("enable_server",
@@ -345,18 +270,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(enableServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing enable_server tool", "backend", backend, "server", server)
-
-		err := client.EnableServer(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to enable server", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to enable server: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Server %s/%s enabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing enable_server tool", "backend", backend, "server", server)
+			return callExec(ctx, "enable server", func() (string, error) {
+				if err := client.EnableServer(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Server %s/%s enabled successfully", backend, server), nil
+			})
+		})
 
 	// --- disable_server tool ---
 	disableServerTool := mcp.NewTool("disable_server",
@@ -366,18 +289,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(disableServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing disable_server tool", "backend", backend, "server", server)
-
-		err := client.DisableServer(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to disable server", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to disable server: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Server %s/%s disabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing disable_server tool", "backend", backend, "server", server)
+			return callExec(ctx, "disable server", func() (string, error) {
+				if err := client.DisableServer(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Server %s/%s disabled successfully", backend, server), nil
+			})
+		})
 
 	// --- set_weight tool ---
 	setWeightTool := mcp.NewTool("set_weight",
@@ -388,21 +309,15 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(setWeightTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		weightVal, _ := req.Params.Arguments["weight"].(float64)
-		weight := int(weightVal)
-
-		slog.InfoContext(ctx, "Executing set_weight tool", "backend", backend, "server", server, "weight", weight)
-
-		result, err := client.SetWeight(backend, server, weight)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to set weight", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to set weight: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(result), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			weightVal, _ := req.Params.Arguments["weight"].(float64)
+			weight := int(weightVal)
+			slog.InfoContext(ctx, "Executing set_weight tool", "backend", backend, "server", server, "weight", weight)
+			return callExec(ctx, "set weight", func() (string, error) {
+				return client.SetWeight(backend, server, weight)
+			})
+		})
 
 	// --- set_maxconn_server tool ---
 	setMaxconnServerTool := mcp.NewTool("set_maxconn_server",
@@ -413,21 +328,18 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(setMaxconnServerTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		maxconnVal, _ := req.Params.Arguments["maxconn"].(float64)
-		maxconn := int(maxconnVal)
-
-		slog.InfoContext(ctx, "Executing set_maxconn_server tool", "backend", backend, "server", server, "maxconn", maxconn)
-
-		err := client.SetServerMaxconn(backend, server, maxconn)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to set maxconn", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to set maxconn: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Maxconn for server %s/%s set to %d", backend, server, maxconn)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			maxconnVal, _ := req.Params.Arguments["maxconn"].(float64)
+			maxconn := int(maxconnVal)
+			slog.InfoContext(ctx, "Executing set_maxconn_server tool", "backend", backend, "server", server, "maxconn", maxconn)
+			return callExec(ctx, "set maxconn", func() (string, error) {
+				if err := client.SetServerMaxconn(backend, server, maxconn); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Maxconn for server %s/%s set to %d", backend, server, maxconn), nil
+			})
+		})
 
 	// ============================================
 	// Section: Health Checks & Agents
@@ -441,18 +353,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(enableHealthTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing enable_health tool", "backend", backend, "server", server)
-
-		err := client.EnableHealth(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to enable health checks", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to enable health checks: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Health checks for server %s/%s enabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing enable_health tool", "backend", backend, "server", server)
+			return callExec(ctx, "enable health checks", func() (string, error) {
+				if err := client.EnableHealth(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Health checks for server %s/%s enabled successfully", backend, server), nil
+			})
+		})
 
 	// --- disable_health tool ---
 	disableHealthTool := mcp.NewTool("disable_health",
@@ -462,18 +372,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(disableHealthTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing disable_health tool", "backend", backend, "server", server)
-
-		err := client.DisableHealth(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to disable health checks", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to disable health checks: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Health checks for server %s/%s disabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing disable_health tool", "backend", backend, "server", server)
+			return callExec(ctx, "disable health checks", func() (string, error) {
+				if err := client.DisableHealth(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Health checks for server %s/%s disabled successfully", backend, server), nil
+			})
+		})
 
 	// --- enable_agent tool ---
 	enableAgentTool := mcp.NewTool("enable_agent",
@@ -483,18 +391,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(enableAgentTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing enable_agent tool", "backend", backend, "server", server)
-
-		err := client.EnableAgent(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to enable agent checks", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to enable agent checks: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Agent checks for server %s/%s enabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing enable_agent tool", "backend", backend, "server", server)
+			return callExec(ctx, "enable agent checks", func() (string, error) {
+				if err := client.EnableAgent(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Agent checks for server %s/%s enabled successfully", backend, server), nil
+			})
+		})
 
 	// --- disable_agent tool ---
 	disableAgentTool := mcp.NewTool("disable_agent",
@@ -504,18 +410,16 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(disableAgentTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		backend, _ := req.Params.Arguments["backend"].(string)
-		server, _ := req.Params.Arguments["server"].(string)
-		slog.InfoContext(ctx, "Executing disable_agent tool", "backend", backend, "server", server)
-
-		err := client.DisableAgent(backend, server)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to disable agent checks", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to disable agent checks: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Agent checks for server %s/%s disabled successfully", backend, server)), nil
-	})
+			backend, _ := req.Params.Arguments["backend"].(string)
+			server, _ := req.Params.Arguments["server"].(string)
+			slog.InfoContext(ctx, "Executing disable_agent tool", "backend", backend, "server", server)
+			return callExec(ctx, "disable agent checks", func() (string, error) {
+				if err := client.DisableAgent(backend, server); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Agent checks for server %s/%s disabled successfully", backend, server), nil
+			})
+		})
 
 	// --- reload_haproxy tool ---
 	reloadHAProxyTool := mcp.NewTool("reload_haproxy",
@@ -523,16 +427,14 @@ func RegisterTools(s *server.MCPServer, client *haproxy.HAProxyClient) {
 	)
 
 	s.AddTool(reloadHAProxyTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.InfoContext(ctx, "Executing reload_haproxy tool")
-
-		err := client.ReloadHAProxy()
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to reload HAProxy configuration", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to reload HAProxy: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText("HAProxy configuration reloaded successfully"), nil
-	})
+			slog.InfoContext(ctx, "Executing reload_haproxy tool")
+			return callExec(ctx, "reload haproxy", func() (string, error) {
+				if err := client.ReloadHAProxy(); err != nil {
+					return "", err
+				}
+				return "HAProxy configuration reloaded successfully", nil
+			})
+		})
 
 	slog.Info("All HAProxy MCP tools registered successfully")
 }
