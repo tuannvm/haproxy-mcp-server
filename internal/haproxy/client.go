@@ -17,6 +17,28 @@ type HAProxyClient struct {
 	StatsURL      string
 }
 
+// ensureRuntime verifies the runtime client is initialized.
+func (c *HAProxyClient) ensureRuntime() error {
+	if c.RuntimeClient == nil {
+		return fmt.Errorf("runtime client is not initialized")
+	}
+	return nil
+}
+
+
+
+
+
+// toggleCheck performs enable/disable for health or agent checks
+func (c *HAProxyClient) toggleCheck(action, checkType, backend, server string) error {
+    if err := c.ensureRuntime(); err != nil {
+        return err
+    }
+    cmd := fmt.Sprintf("%s %s %s/%s", action, checkType, backend, server)
+    _, err := c.ExecuteRuntimeCommand(cmd)
+    return err
+}
+
 // NewHAProxyClient creates a new HAProxy client using the provided configurations
 func NewHAProxyClient(runtimeAPIURL string, statsURL string) (*HAProxyClient, error) {
 	client := &HAProxyClient{
@@ -64,6 +86,8 @@ func (c *HAProxyClient) Close() error {
 	return nil
 }
 
+
+
 // ExecuteRuntimeCommand executes a command on HAProxy's Runtime API
 func (c *HAProxyClient) ExecuteRuntimeCommand(command string) (string, error) {
 	return c.ExecuteRuntimeCommandWithContext(context.Background(), command)
@@ -88,10 +112,10 @@ func (c *HAProxyClient) ExecuteRuntimeCommandWithContext(ctx context.Context, co
 
 // GetRuntimeInfo retrieves HAProxy process information from runtime API
 func (c *HAProxyClient) GetRuntimeInfo() (map[string]string, error) {
-	if c.RuntimeClient == nil {
-		return nil, fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.GetProcessInfo()
+    if err := c.ensureRuntime(); err != nil {
+        return nil, err
+    }
+    return c.RuntimeClient.GetProcessInfo()
 }
 
 // GetStats retrieves HAProxy statistics from stats page
@@ -104,16 +128,16 @@ func (c *HAProxyClient) GetStats() (*statsclient.HAProxyStats, error) {
 
 // GetBackends returns a list of all backends
 func (c *HAProxyClient) GetBackends() ([]string, error) {
-	if c.RuntimeClient == nil {
-		return nil, fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.ListBackends()
+    if err := c.ensureRuntime(); err != nil {
+        return nil, err
+    }
+    return c.RuntimeClient.ListBackends()
 }
 
 // GetBackendDetails returns detailed information about a backend
 func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, error) {
-	if c.RuntimeClient == nil {
-		return nil, fmt.Errorf("runtime client is not initialized")
+	if err := c.ensureRuntime(); err != nil {
+		return nil, err
 	}
 	info, err := c.RuntimeClient.GetBackendInfo(name)
 	if err != nil {
@@ -132,16 +156,16 @@ func (c *HAProxyClient) GetBackendDetails(name string) (map[string]interface{}, 
 
 // ListServers returns a list of servers for a backend
 func (c *HAProxyClient) ListServers(backend string) ([]string, error) {
-	if c.RuntimeClient == nil {
-		return nil, fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.ListServers(backend)
+    if err := c.ensureRuntime(); err != nil {
+        return nil, err
+    }
+    return c.RuntimeClient.ListServers(backend)
 }
 
 // GetServerDetails returns detailed information about a server
 func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]interface{}, error) {
-	if c.RuntimeClient == nil {
-		return nil, fmt.Errorf("runtime client is not initialized")
+	if err := c.ensureRuntime(); err != nil {
+		return nil, err
 	}
 	serverInfo, err := c.RuntimeClient.GetServerDetails(backend, server)
 	if err != nil {
@@ -155,18 +179,18 @@ func (c *HAProxyClient) GetServerDetails(backend, server string) (map[string]int
 
 // EnableServer enables a server in a backend
 func (c *HAProxyClient) EnableServer(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.EnableServer(backend, server)
+    if err := c.ensureRuntime(); err != nil {
+        return err
+    }
+    return c.RuntimeClient.EnableServer(backend, server)
 }
 
 // DisableServer disables a server in a backend
 func (c *HAProxyClient) DisableServer(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.DisableServer(backend, server)
+    if err := c.ensureRuntime(); err != nil {
+        return err
+    }
+    return c.RuntimeClient.DisableServer(backend, server)
 }
 
 // SetWeight sets the weight for a server in a backend
@@ -187,50 +211,30 @@ func (c *HAProxyClient) SetWeight(backend, server string, weight int) (string, e
 
 // SetServerMaxconn sets the maximum connections for a server
 func (c *HAProxyClient) SetServerMaxconn(backend, server string, maxconn int) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	return c.RuntimeClient.SetServerMaxconn(backend, server, maxconn)
+    if err := c.ensureRuntime(); err != nil {
+        return err
+    }
+    return c.RuntimeClient.SetServerMaxconn(backend, server, maxconn)
 }
 
 // EnableHealth enables health checks for a server
 func (c *HAProxyClient) EnableHealth(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	// Use the correct method in the runtime client
-	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("enable health %s/%s", backend, server))
-	return err
+    return c.toggleCheck("enable", "health", backend, server)
 }
 
 // DisableHealth disables health checks for a server
 func (c *HAProxyClient) DisableHealth(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	// Use the correct method in the runtime client
-	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("disable health %s/%s", backend, server))
-	return err
+    return c.toggleCheck("disable", "health", backend, server)
 }
 
 // EnableAgent enables agent checks for a server
 func (c *HAProxyClient) EnableAgent(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	// Use the correct method in the runtime client
-	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("enable agent %s/%s", backend, server))
-	return err
+    return c.toggleCheck("enable", "agent", backend, server)
 }
 
 // DisableAgent disables agent checks for a server
 func (c *HAProxyClient) DisableAgent(backend, server string) error {
-	if c.RuntimeClient == nil {
-		return fmt.Errorf("runtime client is not initialized")
-	}
-	// Use the correct method in the runtime client
-	_, err := c.RuntimeClient.ExecuteRuntimeCommand(fmt.Sprintf("disable agent %s/%s", backend, server))
-	return err
+    return c.toggleCheck("disable", "agent", backend, server)
 }
 
 // ShowStat executes the show stat command

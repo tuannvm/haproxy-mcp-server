@@ -70,32 +70,14 @@ func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("failed to execute 'show stat': %w", err)
 	}
 
-	// Parse CSV-like output into structured data
-	lines := strings.Split(strings.TrimSpace(result), "\n")
-	if len(lines) < 2 {
-		// Need at least a header row and one data row
-		return []map[string]string{}, nil
-	}
-
-	// Parse header row to get column names
-	headerFields := strings.Split(lines[0], ",")
-
-	// Parse data rows
-	stats := make([]map[string]string, 0, len(lines)-1)
-	for i := 1; i < len(lines); i++ {
-		row := make(map[string]string)
-		fields := strings.Split(lines[i], ",")
-
-		// Add each column to the row map
-		for j := 0; j < len(headerFields) && j < len(fields); j++ {
-			row[headerFields[j]] = fields[j]
-		}
-
-		stats = append(stats, row)
-	}
-
-	slog.Debug("Successfully retrieved stats", "count", len(stats))
-	return stats, nil
+	    // Parse CSV-like output into structured data
+	    _, stats, err := parseCSVStats(result)
+	    if err != nil {
+	        slog.Error("Failed to parse stats", "error", err)
+	        return nil, fmt.Errorf("failed to parse stats: %w", err)
+	    }
+	    slog.Debug("Successfully retrieved stats", "count", len(stats))
+	    return stats, nil
 }
 
 // GetStats retrieves runtime statistics.
