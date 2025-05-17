@@ -9,7 +9,7 @@ import (
 )
 
 // Debug broken tests. Returns a unified diff of the test fixes
-func (g *HAProxyMCPServer) DebugTests(
+func (g *HaproxyMcpServer) DebugTests(
 	ctx context.Context,
 	// The model to use to debug tests
 	// +optional
@@ -40,7 +40,7 @@ func (g *HAProxyMCPServer) DebugTests(
 }
 
 // Debug broken tests on a pull request and comment fix suggestions
-func (g *HAProxyMCPServer) DebugBrokenTestsPr(
+func (g *HaproxyMcpServer) DebugBrokenTestsPr(
 	ctx context.Context,
 	// Github token with permissions to comment on the pull request
 	githubToken *dagger.Secret,

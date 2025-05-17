@@ -7,7 +7,7 @@ import (
 	"github.com/tuannvm/haproxy-mcp-server/.dagger/internal/dagger"
 )
 
-type HAProxyMCPServer struct {
+type HaproxyMcpServer struct {
 	// +private
 	Source *dagger.Directory
 	// +private
@@ -34,8 +34,8 @@ func New(
 	// +optional
 	// +default="dagger-demo"
 	app string,
-) *HAProxyMCPServer {
-	g := &HAProxyMCPServer{
+) *HaproxyMcpServer {
+	g := &HaproxyMcpServer{
 		Source:  source,
 		Repo:    repo,
 		Image:   image,
@@ -46,7 +46,7 @@ func New(
 }
 
 // Run the CI Checks for the project
-func (g *HAProxyMCPServer) Check(
+func (g *HaproxyMcpServer) Check(
 	ctx context.Context,
 	// Github token with permissions to comment on the pull request
 	// +optional
@@ -88,28 +88,28 @@ func (g *HAProxyMCPServer) Check(
 }
 
 // Run unit tests for the project
-func (g *HAProxyMCPServer) Test(ctx context.Context) (string, error) {
+func (g *HaproxyMcpServer) Test(ctx context.Context) (string, error) {
 	return g.Backend.UnitTest(ctx)
 }
 
 // Lint the Go code in the project
-func (g *HAProxyMCPServer) Lint(ctx context.Context) (string, error) {
+func (g *HaproxyMcpServer) Lint(ctx context.Context) (string, error) {
 	return g.Backend.Lint(ctx)
 }
 
 // Build the backend binary
-func (g *HAProxyMCPServer) Build() *dagger.Directory {
+func (g *HaproxyMcpServer) Build() *dagger.Directory {
 	return dag.Directory().
 		WithFile("/build/haproxy-mcp-server", g.Backend.Binary())
 }
 
 // Serve the backend on port 8080
-func (g *HAProxyMCPServer) Serve() *dagger.Service {
+func (g *HaproxyMcpServer) Serve() *dagger.Service {
 	return g.Backend.Serve()
 }
 
 // Create a GitHub release
-func (g *HAProxyMCPServer) Release(ctx context.Context, tag string, ghToken *dagger.Secret) (string, error) {
+func (g *HaproxyMcpServer) Release(ctx context.Context, tag string, ghToken *dagger.Secret) (string, error) {
 	// Get build
 	build := g.Build()
 	

@@ -7,7 +7,7 @@ import (
 )
 
 // Agent to review changes made in a Directory
-func (g *HAProxyMCPServer) DevelopReview(
+func (g *HaproxyMcpServer) DevelopReview(
 	ctx context.Context,
 	// Source directory containing the developed changes
 	source *dagger.Directory,
@@ -43,7 +43,7 @@ func (g *HAProxyMCPServer) DevelopReview(
 }
 
 // Review an open pull request via slash command
-func (g *HAProxyMCPServer) PullRequestReview(
+func (g *HaproxyMcpServer) PullRequestReview(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,

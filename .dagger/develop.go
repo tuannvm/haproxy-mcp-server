@@ -9,7 +9,7 @@ import (
 )
 
 // Complete an assignment for the greetings project and get back the completed work
-func (g *HAProxyMCPServer) Develop(
+func (g *HaproxyMcpServer) Develop(
 	ctx context.Context,
 	// The assignment to complete
 	assignment string,
@@ -46,7 +46,7 @@ func (g *HAProxyMCPServer) Develop(
 }
 
 // Develop changes based on a Github issue and open a pull request
-func (g *HAProxyMCPServer) DevelopPullRequest(
+func (g *HaproxyMcpServer) DevelopPullRequest(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,
@@ -85,7 +85,7 @@ func (g *HAProxyMCPServer) DevelopPullRequest(
 }
 
 // Agent to develop changes based on feedback on changes made in a Directory
-func (g *HAProxyMCPServer) DevelopFeedback(
+func (g *HaproxyMcpServer) DevelopFeedback(
 	ctx context.Context,
 	// Source directory containing the developed changes
 	source *dagger.Directory,
@@ -127,7 +127,7 @@ func (g *HAProxyMCPServer) DevelopFeedback(
 }
 
 // Receive feedback on an open pull request via slash command
-func (g *HAProxyMCPServer) PullRequestFeedback(
+func (g *HaproxyMcpServer) PullRequestFeedback(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,
