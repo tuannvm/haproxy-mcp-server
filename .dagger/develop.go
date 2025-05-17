@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tuannvm/greetings-api/.dagger/internal/dagger"
+	"github.com/tuannvm/haproxy-mcp-server/.dagger/internal/dagger"
 )
 
 // Complete an assignment for the greetings project and get back the completed work
-func (g *Greetings) Develop(
+func (g *HAProxyMCPServer) Develop(
 	ctx context.Context,
 	// The assignment to complete
 	assignment string,
@@ -46,7 +46,7 @@ func (g *Greetings) Develop(
 }
 
 // Develop changes based on a Github issue and open a pull request
-func (g *Greetings) DevelopPullRequest(
+func (g *HAProxyMCPServer) DevelopPullRequest(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,
@@ -85,7 +85,7 @@ func (g *Greetings) DevelopPullRequest(
 }
 
 // Agent to develop changes based on feedback on changes made in a Directory
-func (g *Greetings) DevelopFeedback(
+func (g *HAProxyMCPServer) DevelopFeedback(
 	ctx context.Context,
 	// Source directory containing the developed changes
 	source *dagger.Directory,
@@ -127,7 +127,7 @@ func (g *Greetings) DevelopFeedback(
 }
 
 // Receive feedback on an open pull request via slash command
-func (g *Greetings) PullRequestFeedback(
+func (g *HAProxyMCPServer) PullRequestFeedback(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,

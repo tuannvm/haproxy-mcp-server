@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 
-	"github.com/tuannvm/greetings-api/.dagger/internal/dagger"
+	"github.com/tuannvm/haproxy-mcp-server/.dagger/internal/dagger"
 )
 
 // Agent to review changes made in a Directory
-func (g *Greetings) DevelopReview(
+func (g *HAProxyMCPServer) DevelopReview(
 	ctx context.Context,
 	// Source directory containing the developed changes
 	source *dagger.Directory,
@@ -43,7 +43,7 @@ func (g *Greetings) DevelopReview(
 }
 
 // Review an open pull request via slash command
-func (g *Greetings) PullRequestReview(
+func (g *HAProxyMCPServer) PullRequestReview(
 	ctx context.Context,
 	// Github token with permissions to create a pull request
 	githubToken *dagger.Secret,

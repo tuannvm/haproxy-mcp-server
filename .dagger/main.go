@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tuannvm/greetings-api/.dagger/internal/dagger"
+	"github.com/tuannvm/haproxy-mcp-server/.dagger/internal/dagger"
 )
 
-type Greetings struct {
+type HAProxyMCPServer struct {
 	// +private
 	Source *dagger.Directory
 	// +private
@@ -18,8 +18,6 @@ type Greetings struct {
 	App string
 	// +private
 	Backend *dagger.Backend
-	// +private
-	Frontend *dagger.Frontend
 }
 
 func New(
@@ -28,7 +26,7 @@ func New(
 	// +ignore=[".git", "**/node_modules"]
 	source *dagger.Directory,
 	// +optional
-	// +default="github.com/tuannvm/greetings-api"
+	// +default="github.com/tuannvm/haproxy-mcp-server"
 	repo string,
 	// +optional
 	// +default="kylepenfound/greetings-api:latest"
@@ -36,20 +34,19 @@ func New(
 	// +optional
 	// +default="dagger-demo"
 	app string,
-) *Greetings {
-	g := &Greetings{
+) *HAProxyMCPServer {
+	g := &HAProxyMCPServer{
 		Source:  source,
 		Repo:    repo,
 		Image:   image,
 		App:     app,
-		Backend: dag.Backend(source.WithoutDirectory("website")),
+		Backend: dag.Backend(source.WithoutDirectory("internal")),
 	}
-	g.Frontend = dag.Frontend(source.Directory("website"), g.Backend.Serve())
 	return g
 }
 
 // Run the CI Checks for the project
-func (g *Greetings) Check(
+func (g *HAProxyMCPServer) Check(
 	ctx context.Context,
 	// Github token with permissions to comment on the pull request
 	// +optional
@@ -91,65 +88,31 @@ func (g *Greetings) Check(
 }
 
 // Run unit tests for the project
-func (g *Greetings) Test(ctx context.Context) (string, error) {
-	backendResult, err := g.Backend.UnitTest(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	frontendResult, err := g.Frontend.UnitTest(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return backendResult + "\n" + frontendResult, nil
+func (g *HAProxyMCPServer) Test(ctx context.Context) (string, error) {
+	return g.Backend.UnitTest(ctx)
 }
 
 // Lint the Go code in the project
-func (g *Greetings) Lint(ctx context.Context) (string, error) {
-	backendResult, err := g.Backend.Lint(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	frontendResult, err := g.Frontend.Lint(ctx)
-	if err != nil {
-		return "", err
-	}
-	return backendResult + "\n" + frontendResult, nil
+func (g *HAProxyMCPServer) Lint(ctx context.Context) (string, error) {
+	return g.Backend.Lint(ctx)
 }
 
-// Build the backend and frontend for a specified environment
-func (g *Greetings) Build() *dagger.Directory {
+// Build the backend binary
+func (g *HAProxyMCPServer) Build() *dagger.Directory {
 	return dag.Directory().
-		WithFile("/build/greetings-api", g.Backend.Binary()).
-		WithDirectory("build/website/", g.Frontend.Build())
+		WithFile("/build/haproxy-mcp-server", g.Backend.Binary())
 }
 
-// Serve the backend and frontend to 8080 and 8081 respectively
-func (g *Greetings) Serve() *dagger.Service {
-	backendService := g.Backend.Serve()
-	frontendService := g.Frontend.Serve()
-
-	return dag.Proxy().
-		WithService(backendService, "backend", 8080, 8080).
-		WithService(frontendService, "frontend", 8081, 80).
-		Service()
+// Serve the backend on port 8080
+func (g *HAProxyMCPServer) Serve() *dagger.Service {
+	return g.Backend.Serve()
 }
 
 // Create a GitHub release
-func (g *Greetings) Release(ctx context.Context, tag string, ghToken *dagger.Secret) (string, error) {
+func (g *HAProxyMCPServer) Release(ctx context.Context, tag string, ghToken *dagger.Secret) (string, error) {
 	// Get build
 	build := g.Build()
-	// Compress frontend build
-	assets := dag.Container().From("alpine:3.18").
-		WithDirectory("/assets", build).
-		WithWorkdir("/assets/build").
-		WithExec([]string{"tar", "czf", "website.tar.gz", "website/"}).
-		WithExec([]string{"rm", "-r", "website"}).
-		Directory("/assets/build")
-	_, _ = assets.Sync(ctx)
-
+	
 	title := fmt.Sprintf("Release %s", tag)
-	return dag.GithubRelease().Create(ctx, g.Repo, tag, title, ghToken, dagger.GithubReleaseCreateOpts{Assets: assets})
+	return dag.GithubRelease().Create(ctx, g.Repo, tag, title, ghToken, dagger.GithubReleaseCreateOpts{Assets: build})
 }

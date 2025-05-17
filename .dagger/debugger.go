@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tuannvm/greetings-api/.dagger/internal/dagger"
+	"github.com/tuannvm/haproxy-mcp-server/.dagger/internal/dagger"
 )
 
 // Debug broken tests. Returns a unified diff of the test fixes
-func (g *Greetings) DebugTests(
+func (g *HAProxyMCPServer) DebugTests(
 	ctx context.Context,
-	// The model to use to debug debug tests
+	// The model to use to debug tests
 	// +optional
 	// +default = "gemini-2.0-flash"
 	model string,
@@ -36,29 +36,11 @@ func (g *Greetings) DebugTests(
 			Diff(ctx)
 	}
 
-	// Check if frontend is broken
-	if _, ferr := g.Frontend.CheckDirectory(ctx, g.Frontend.Source()); ferr != nil {
-		ws := dag.Workspace(
-			g.Frontend.Source(),
-			g.Frontend.AsWorkspaceCheckable(),
-		)
-		env := dag.Env().
-			WithWorkspaceInput("workspace", ws, "workspace to read, write, and test code").
-			WithWorkspaceOutput("fixed", "workspace with fixed tests")
-		return dag.LLM(dagger.LLMOpts{Model: model}).
-			WithEnv(env).
-			WithPromptFile(prompt).
-			Env().
-			Output("fixed").
-			AsWorkspace().
-			Diff(ctx)
-	}
-
-	return "", fmt.Errorf("no broken tests found")
+	return "", fmt.Errorf("no broken backend tests found")
 }
 
 // Debug broken tests on a pull request and comment fix suggestions
-func (g *Greetings) DebugBrokenTestsPr(
+func (g *HAProxyMCPServer) DebugBrokenTestsPr(
 	ctx context.Context,
 	// Github token with permissions to comment on the pull request
 	githubToken *dagger.Secret,

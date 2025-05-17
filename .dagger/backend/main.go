@@ -78,7 +78,7 @@ func (b *Backend) Binary(
 	return d.File("greetings-api")
 }
 
-// Get a container ready to run the backend
+// Get a container ready to run the HAProxy MCP Server
 func (b *Backend) Container(
 	// +optional
 	arch string,
@@ -86,13 +86,31 @@ func (b *Backend) Container(
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
+
+	// Get the compiled binary
 	bin := b.Binary(arch)
-	return dag.
+	
+	// Create and configure the container
+	container := dag.
 		Container(dagger.ContainerOpts{Platform: dagger.Platform(arch)}).
+		// Use the minimal Wolfi base image
 		From("cgr.dev/chainguard/wolfi-base:latest@sha256:a8c9c2888304e62c133af76f520c9c9e6b3ce6f1a45e3eaa57f6639eb8053c90").
-		WithFile("/bin/greetings-api", bin).
-		WithEntrypoint([]string{"/bin/greetings-api"}).
-		WithExposedPort(8080)
+		// Add the binary to the container
+		WithFile("/haproxy-mcp-server", bin).
+		// Set the binary as the entrypoint
+		WithEntrypoint([]string{"/haproxy-mcp-server"}).
+		// Expose the default HAProxy MCP Server port (update if different)
+		WithExposedPort(8080).
+		// Set default environment variables
+		WithEnvVariable("TZ", "UTC").
+		// Set a default working directory
+		WithWorkdir("/")
+
+	// Add health check if needed
+	// Note: The base image doesn't include wget or curl by default
+	// You might want to use a different health check mechanism or a different base image
+
+	return container
 }
 
 // Get a Service to run the backend
