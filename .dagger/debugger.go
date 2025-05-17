@@ -13,7 +13,7 @@ func (g *HaproxyMcpServer) DebugTests(
 	ctx context.Context,
 	// The model to use to debug tests
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) (string, error) {
 	prompt := dag.CurrentModule().Source().File("prompts/fix_tests.md")
@@ -48,7 +48,7 @@ func (g *HaproxyMcpServer) DebugBrokenTestsPr(
 	commit string,
 	// The model to use to debug debug tests
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) error {
 	gh := dag.GithubIssue(dagger.GithubIssueOpts{Token: githubToken})

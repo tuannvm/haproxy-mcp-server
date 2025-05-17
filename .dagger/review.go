@@ -17,7 +17,7 @@ func (g *HaproxyMcpServer) DevelopReview(
 	diff string,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) (string, error) {
 	// Run the agent
@@ -51,7 +51,7 @@ func (g *HaproxyMcpServer) PullRequestReview(
 	issueId int,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) error {
 	// Get the pull request information

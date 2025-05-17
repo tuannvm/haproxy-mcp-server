@@ -15,7 +15,7 @@ func (g *HaproxyMcpServer) Develop(
 	assignment string,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) *dagger.Directory {
 	prompt := dag.CurrentModule().Source().File("prompts/assignment.md")
@@ -54,7 +54,7 @@ func (g *HaproxyMcpServer) DevelopPullRequest(
 	issueId int,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) (string, error) {
 	gh := dag.GithubIssue(dagger.GithubIssueOpts{Token: githubToken})
@@ -97,7 +97,7 @@ func (g *HaproxyMcpServer) DevelopFeedback(
 	feedback string,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) (*dagger.Directory, error) {
 	// Run the agent
@@ -137,7 +137,7 @@ func (g *HaproxyMcpServer) PullRequestFeedback(
 	feedback string,
 	// The model to use to complete the assignment
 	// +optional
-	// +default = "gemini-2.0-flash"
+	// +default = "gpt-4.1"
 	model string,
 ) error {
 	// Strip out slash command
