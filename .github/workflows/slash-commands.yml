@@ -6,12 +6,9 @@ jobs:
   comment-created:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate an agent token
+      - name: Set up GitHub token
         id: generate-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.KAL_APP_ID }}
-          private-key: ${{ secrets.KAL_PRIVATE_KEY }}
+        run: echo "token=${{ github.token }}" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
       - uses: dagger/dagger-for-github@8.0.0
       - name: slash agent
