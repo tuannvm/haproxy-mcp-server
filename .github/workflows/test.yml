@@ -1,0 +1,20 @@
+name: ci
+on:
+  push:
+    branches: ["**", "!main"]
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up GitHub token
+        id: generate-token
+        run: echo "token=${{ github.token }}" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@8.0.0
+      - name: Check
+        run: dagger call check --github-token GH_TOKEN --model gpt-4.1 --commit $GITHUB_SHA
+        env:
+          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
