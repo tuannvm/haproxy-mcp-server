@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server" // Import directly without alias
+	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/tuannvm/haproxy-mcp-server/internal/config"
 	"github.com/tuannvm/haproxy-mcp-server/internal/haproxy"
@@ -20,15 +20,15 @@ import (
 )
 
 func main() {
-	// --- Configuration ---
+	// Load service configuration from environment and defaults
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// --- Logging ---
-	// Configure logging level
+	// --- Logging Setup ---
+	// Establish structured logging with configurable log levels
 	var logLevel slog.Level
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
@@ -44,63 +44,51 @@ func main() {
 		logLevel = slog.LevelInfo
 	}
 
-	// Use text handler for development/stdio mode
+	// Use text handler for development/stdio or JSON for production/default
 	var handler slog.Handler
 	if cfg.MCPTransport == "stdio" || os.Getenv("PRETTY_LOG") == "true" {
-		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: logLevel,
-		})
+		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	} else {
-		handler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-			Level: logLevel,
-		})
+		handler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	}
 	slog.SetDefault(slog.New(handler))
 
 	slog.Info("Starting HAProxy MCP Server...")
 	slog.Info("Loaded configuration", "config", cfg)
 
-	// --- HAProxy Runtime API Client ---
+	// --- HAProxy Runtime API Client Initialization ---
+	// Determine runtime API endpoint according to provided/canonical settings
 	var runtimeAPIURL string
-
-	// Use direct URL if provided, otherwise construct from components
 	if cfg.HAProxyRuntimeURL != "" {
 		runtimeAPIURL = cfg.HAProxyRuntimeURL
 	} else {
-		// Handle connection based on runtime mode
 		switch cfg.HAProxyRuntimeMode {
 		case "unix":
-			// Unix socket mode
+			// Use unix domain socket path for HAProxy control
 			if cfg.HAProxyRuntimeSocket == "" {
 				slog.Error("HAProxy Runtime socket path is empty. Please set HAPROXY_RUNTIME_SOCKET env variable.")
 				os.Exit(1)
 			}
-
-			// Create a URL with unix socket protocol
 			u := &url.URL{
 				Scheme: "unix",
 				Path:   cfg.HAProxyRuntimeSocket,
 			}
 			runtimeAPIURL = u.String()
-
 		case "tcp4":
-			// TCP4 mode
+			// Use TCP socket for remote/local HAProxy control API
 			if cfg.HAProxyHost == "" {
 				slog.Error("HAProxy host is empty. Please set HAPROXY_HOST env variable.")
 				os.Exit(1)
 			}
-
-			// Create a TCP URL
 			u := &url.URL{
 				Scheme: "tcp",
 				Host:   fmt.Sprintf("%s:%d", cfg.HAProxyHost, cfg.HAProxyPort),
 			}
 			runtimeAPIURL = u.String()
-
 		default:
+			// If stats are enabled, allow running with only metrics access
 			if cfg.HAProxyStatsEnabled && cfg.HAProxyStatsURL != "" {
-				slog.Warn("Invalid HAProxy runtime mode, but stats API is enabled. Continuing with stats only.",
-					"mode", cfg.HAProxyRuntimeMode)
+				slog.Warn("Invalid HAProxy runtime mode, but stats API is enabled. Continuing with stats only.", "mode", cfg.HAProxyRuntimeMode)
 				runtimeAPIURL = ""
 			} else {
 				slog.Error("Invalid HAProxy runtime mode and no stats API configured", "mode", cfg.HAProxyRuntimeMode)
@@ -109,7 +97,8 @@ func main() {
 		}
 	}
 
-	// --- HAProxy Stats Client ---
+	// --- HAProxy Stats API Client Initialization ---
+	// Optionally configure stats API client if enabled and provided
 	var statsURL string
 	if cfg.HAProxyStatsEnabled && cfg.HAProxyStatsURL != "" {
 		statsURL = cfg.HAProxyStatsURL
@@ -118,7 +107,7 @@ func main() {
 		slog.Info("HAProxy Stats API disabled")
 	}
 
-	// Ensure at least one API is configured
+	// Must have at least one way to interact with HAProxy
 	if runtimeAPIURL == "" && statsURL == "" {
 		slog.Error("Neither HAProxy Runtime API nor Stats API is configured")
 		os.Exit(1)
@@ -126,43 +115,38 @@ func main() {
 
 	slog.Info("Connecting to HAProxy", "runtimeAPIURL", runtimeAPIURL, "statsURL", statsURL)
 
-	// Create the HAProxy client with the appropriate URLs
+	// Build HAProxy management client (fail fast if construction fails)
 	haproxyClient, err := haproxy.NewHAProxyClient(runtimeAPIURL, statsURL)
 	if err != nil {
-		// Log fatal here as the client is essential for the server's function
 		slog.Error("Failed to initialize HAProxy client", "error", err)
 		os.Exit(1)
 	}
 
-	// --- MCP Server ---
-	// Create MCP Server with name and version
+	// --- MCP Server Instance Creation ---
+	// Provide project and version for registration and tool association
 	mcpServer := server.NewMCPServer("haproxy-mcp-server", "0.1.0")
 
-	// --- Register Tools ---
-	mcp.RegisterTools(mcpServer, haproxyClient) // Use mcp.RegisterTools instead of tools.RegisterTools
+	// Register all HAProxy control tools for MCP
+	mcp.RegisterTools(mcpServer, haproxyClient)
 
-	// --- Context and Shutdown Handling ---
+	// --- Context & Graceful Shutdown Management ---
+	// Allow clean shutdown on SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// --- Transport Handling ---
+	// --- MCP Transport Mode Selection ---
 	switch cfg.MCPTransport {
 	case "stdio":
 		slog.Info("Running MCP server in stdio mode")
-		// Use ServeStdio for stdio mode
 		if err := server.ServeStdio(mcpServer); err != nil {
 			slog.Error("MCP server exited with error (stdio)", "error", err)
 			os.Exit(1)
 		}
 		slog.Info("MCP server (stdio) finished gracefully")
-
 	case "http":
+		// HTTP/SSE event server startup
 		addr := fmt.Sprintf(":%d", cfg.MCPPort)
-
-		// Create an SSE server
 		sseServer := server.NewSSEServer(mcpServer)
-
-		// Create HTTP server with SSE handler
 		httpServer := &http.Server{
 			Addr:    addr,
 			Handler: sseServer,
@@ -176,11 +160,9 @@ func main() {
 			}
 		}()
 
-		// Wait for shutdown signal
+		// Block until interrupt/shutdown, then cleanup
 		<-ctx.Done()
 		slog.Info("Shutdown signal received, stopping HTTP server...")
-
-		// Graceful shutdown
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -188,7 +170,6 @@ func main() {
 		} else {
 			slog.Info("HTTP server stopped gracefully")
 		}
-
 	default:
 		slog.Error("Invalid MCP_TRANSPORT specified", "transport", cfg.MCPTransport)
 		os.Exit(1)
