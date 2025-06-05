@@ -112,7 +112,7 @@ func (g *HaproxyMcpServer) Serve() *dagger.Service {
 func (g *HaproxyMcpServer) Release(ctx context.Context, tag string, ghToken *dagger.Secret) (string, error) {
 	// Get build
 	build := g.Build()
-	
+
 	title := fmt.Sprintf("Release %s", tag)
 	return dag.GithubRelease().Create(ctx, g.Repo, tag, title, ghToken, dagger.GithubReleaseCreateOpts{Assets: build})
 }
