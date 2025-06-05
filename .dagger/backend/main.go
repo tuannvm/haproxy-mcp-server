@@ -17,14 +17,6 @@ func New(source *dagger.Directory) *Backend {
 	}
 }
 
-// Run the unit tests for the backend
-func (b *Backend) UnitTest(ctx context.Context) (string, error) {
-	return dag.
-		Golang().
-		WithSource(b.Source).
-		Test(ctx)
-}
-
 // Lint the backend Go code
 func (b *Backend) Lint(ctx context.Context) (string, error) {
 	return dag.
@@ -89,7 +81,7 @@ func (b *Backend) Container(
 
 	// Get the compiled binary
 	bin := b.Binary(arch)
-	
+
 	// Create and configure the container
 	container := dag.
 		Container(dagger.ContainerOpts{Platform: dagger.Platform(arch)}).
