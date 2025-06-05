@@ -84,8 +84,8 @@ func (g *HaproxyMcpServer) Lint(ctx context.Context) (string, error) {
 
 // Build the backend binary
 func (g *HaproxyMcpServer) Build() *dagger.Directory {
-	return dag.Directory().
-		WithFile("/build/haproxy-mcp-server", g.Backend.Binary())
+	// The backend.Build() function already returns a directory with the binary in bin/haproxy-mcp-server
+	return g.Backend.Build()
 }
 
 // Serve the backend on port 8080
@@ -98,6 +98,14 @@ func (g *HaproxyMcpServer) Release(ctx context.Context, tag string, ghToken *dag
 	// Get build
 	build := g.Build()
 
+	// Get the binary from the build directory
+	binary := build.File("bin/haproxy-mcp-server")
+
+	// Create a directory with the binary at the root for the release
+	releaseDir := dag.Directory().WithFile("haproxy-mcp-server", binary)
+
 	title := fmt.Sprintf("Release %s", tag)
-	return dag.GithubRelease().Create(ctx, g.Repo, tag, title, ghToken, dagger.GithubReleaseCreateOpts{Assets: build})
+	return dag.GithubRelease().Create(ctx, g.Repo, tag, title, ghToken, dagger.GithubReleaseCreateOpts{
+		Assets: releaseDir,
+	})
 }
