@@ -17,8 +17,9 @@ func New(source *dagger.Directory) *Backend {
 	}
 }
 
-// Lint the backend Go code
+// Lint runs golangci-lint on the code
 func (b *Backend) Lint(ctx context.Context) (string, error) {
+	// Use the existing Golang Dagger module for linting
 	return dag.
 		Golang().
 		WithSource(b.Source).
@@ -43,7 +44,7 @@ func (b *Backend) Check(ctx context.Context) (string, error) {
 	return lint, nil
 }
 
-// Build the backend
+// Build the backend binary
 func (b *Backend) Build(
 	// +optional
 	arch string,
@@ -51,10 +52,15 @@ func (b *Backend) Build(
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
-	return dag.
-		Golang().
+
+	// Use the existing Golang Dagger module for building
+	buildDir := dag.Golang().
 		WithSource(b.Source).
-		Build([]string{}, dagger.GolangBuildOpts{Arch: arch})
+		Build([]string{}, dagger.GolangBuildOpts{
+			Arch: arch,
+		})
+
+	return buildDir
 }
 
 // Return the compiled backend binary for a particular architecture
@@ -63,6 +69,7 @@ func (b *Backend) Binary(
 	arch string,
 ) *dagger.File {
 	d := b.Build(arch)
+	// The binary name should match what's expected by the build system
 	return d.File("greetings-api")
 }
 
