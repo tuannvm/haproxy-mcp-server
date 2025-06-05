@@ -1,0 +1,33 @@
+{
+  "name": "haproxy-mcp-server",
+  "engineVersion": "v0.18.8",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "backend",
+      "source": ".dagger/backend"
+    },
+    {
+      "name": "github-issue",
+      "source": "github.com/kpenfound/dag/github-issue",
+      "pin": "46246adc2083c59db0076730e86b6fda2db8261a"
+    },
+    {
+      "name": "github-release",
+      "source": "github.com/kpenfound/jpadams-github-release@c6081b3210407d5ea49fce8874c5104afa8373cb",
+      "pin": "c6081b3210407d5ea49fce8874c5104afa8373cb"
+    },
+    {
+      "name": "proxy",
+      "source": "github.com/kpenfound/dagger-modules/proxy@proxy/v0.2.5",
+      "pin": "3e9129a119151eb122e5fe380bd2d4313d8fc001"
+    },
+    {
+      "name": "workspace",
+      "source": ".dagger/workspace"
+    }
+  ],
+  "source": ".dagger"
+}
