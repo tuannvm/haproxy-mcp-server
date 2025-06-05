@@ -70,7 +70,7 @@ func (b *Backend) Binary(
 ) *dagger.File {
 	d := b.Build(arch)
 	// The binary name should match what's expected by the build system
-	return d.File("greetings-api")
+	return d.File("haproxy-mcp-server")
 }
 
 // Get a container ready to run the HAProxy MCP Server
