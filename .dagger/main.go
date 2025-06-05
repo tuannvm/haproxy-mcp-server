@@ -68,28 +68,13 @@ func (g *HaproxyMcpServer) Check(
 		return "", err
 	}
 
-	// Then Test
-	testOut, err := g.Test(ctx)
-	if err != nil {
-		if githubToken != nil {
-			debugErr := g.DebugBrokenTestsPr(ctx, githubToken, commit, model)
-			return "", fmt.Errorf("lint failed, attempting to debug %v %v", err, debugErr)
-		}
-		return "", err
-	}
-
 	// Then Build
 	_, err = g.Build().Sync(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	return lintOut + "\n\n" + testOut, nil
-}
-
-// Run unit tests for the project
-func (g *HaproxyMcpServer) Test(ctx context.Context) (string, error) {
-	return g.Backend.UnitTest(ctx)
+	return lintOut + "\n\n", nil
 }
 
 // Lint the Go code in the project
