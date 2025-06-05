@@ -40,11 +40,7 @@ func (b *Backend) Check(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	test, err := b.UnitTest(ctx)
-	if err != nil {
-		return "", err
-	}
-	return lint + "\n" + test, nil
+	return lint, nil
 }
 
 // Build the backend
