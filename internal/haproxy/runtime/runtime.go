@@ -70,14 +70,14 @@ func (c *HAProxyClient) ShowStat(filter string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("failed to execute 'show stat': %w", err)
 	}
 
-	    // Parse CSV-like output into structured data
-	    _, stats, err := parseCSVStats(result)
-	    if err != nil {
-	        slog.Error("Failed to parse stats", "error", err)
-	        return nil, fmt.Errorf("failed to parse stats: %w", err)
-	    }
-	    slog.Debug("Successfully retrieved stats", "count", len(stats))
-	    return stats, nil
+	// Parse CSV-like output into structured data
+	_, stats, err := parseCSVStats(result)
+	if err != nil {
+		slog.Error("Failed to parse stats", "error", err)
+		return nil, fmt.Errorf("failed to parse stats: %w", err)
+	}
+	slog.Debug("Successfully retrieved stats", "count", len(stats))
+	return stats, nil
 }
 
 // GetStats retrieves runtime statistics.

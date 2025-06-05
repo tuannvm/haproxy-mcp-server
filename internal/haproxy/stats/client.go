@@ -43,15 +43,14 @@ func (c *StatsClient) buildURL(suffix string) string {
 	return baseURL + suffix
 }
 
-// GetStats fetches statistics from HAProxy stats page
-func (c *StatsClient) GetStats() (*HAProxyStats, error) {
-	// Construct URL for JSON stats
-	statsURL := c.buildURL(";json")
+// doRequest performs an HTTP request and processes the response
+func (c *StatsClient) doRequest(url string, description string) ([]byte, error) {
+	slog.Info(fmt.Sprintf("Fetching %s", description), "url", url)
 
 	// Make HTTP request
-	resp, err := c.httpClient.Get(statsURL)
+	resp, err := c.httpClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch HAProxy stats: %w", err)
+		return nil, fmt.Errorf("failed to fetch %s: %w", description, err)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -61,21 +60,92 @@ func (c *StatsClient) GetStats() (*HAProxyStats, error) {
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HAProxy stats request failed with status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s request failed with status code: %d", description, resp.StatusCode)
 	}
 
-	// Read and parse response
+	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read HAProxy stats response: %w", err)
+		return nil, fmt.Errorf("failed to read %s response: %w", description, err)
 	}
 
-	var stats HAProxyStats
-	if err := json.Unmarshal(body, &stats); err != nil {
-		return nil, fmt.Errorf("failed to parse HAProxy stats: %w", err)
+	// Log raw response data for debugging
+	slog.Debug(fmt.Sprintf("%s raw response", description),
+		"content_type", resp.Header.Get("Content-Type"),
+		"content_length", len(body),
+		"response_start", string(body[:min(100, len(body))]))
+
+	return body, nil
+}
+
+// GetStats fetches statistics from HAProxy stats page
+func (c *StatsClient) GetStats() (*HAProxyStats, error) {
+	// Construct URL for JSON stats
+	statsURL := c.StatsURL
+	// Make sure we're requesting JSON format
+	if !containsSubstring(statsURL, ";json") && !containsSubstring(statsURL, "/stats;json") {
+		statsURL = appendPath(statsURL, ";json")
 	}
 
-	return &stats, nil
+	// Get response body
+	body, err := c.doRequest(statsURL, "HAProxy stats")
+	if err != nil {
+		return nil, err
+	}
+
+	// First, try to unmarshal as a generic interface (could be array or object)
+	var rawData interface{}
+	if err := json.Unmarshal(body, &rawData); err != nil {
+		slog.Error("Failed to parse HAProxy stats response",
+			"error", err,
+			"content_type", "application/json",
+			"response_start", string(body[:min(200, len(body))]))
+		return nil, fmt.Errorf("failed to parse HAProxy stats response: %w", err)
+	}
+
+	// Convert the generic interface data to our StatsItem objects
+	stats := &HAProxyStats{
+		Stats: []StatsItem{},
+	}
+
+	// Process based on the type we received
+	switch data := rawData.(type) {
+	case []interface{}:
+		// Handle array response
+		slog.Info("Processing HAProxy stats as array", "count", len(data))
+		for _, item := range data {
+			if mapItem, ok := item.(map[string]interface{}); ok {
+				stats.Stats = append(stats.Stats, NewStatsItem(mapItem))
+			}
+		}
+	case map[string]interface{}:
+		// Handle object response
+		slog.Info("Processing HAProxy stats as object")
+		// Check if there's a "stats" field containing an array
+		if statsArray, ok := data["stats"].([]interface{}); ok {
+			for _, item := range statsArray {
+				if mapItem, ok := item.(map[string]interface{}); ok {
+					stats.Stats = append(stats.Stats, NewStatsItem(mapItem))
+				}
+			}
+		} else {
+			// Treat the whole object as a single stats item
+			stats.Stats = append(stats.Stats, NewStatsItem(data))
+		}
+	default:
+		slog.Warn("Unexpected HAProxy stats response format",
+			"type", fmt.Sprintf("%T", rawData),
+			"data_preview", fmt.Sprintf("%v", rawData)[:min(100, len(fmt.Sprintf("%v", rawData)))])
+		return nil, fmt.Errorf("unexpected HAProxy stats response format: %T", rawData)
+	}
+
+	if len(stats.Stats) == 0 {
+		slog.Warn("No stats items found in HAProxy response")
+	} else {
+		slog.Info("Successfully parsed HAProxy stats", "count", len(stats.Stats))
+	}
+
+	return stats, nil
 }
 
 // GetSchema fetches the JSON schema for HAProxy stats
@@ -88,26 +158,10 @@ func (c *StatsClient) GetSchema() (*StatsSchema, error) {
 		schemaURL = c.buildURL(";json-schema")
 	}
 
-	// Make HTTP request
-	resp, err := c.httpClient.Get(schemaURL)
+	// Get response body
+	body, err := c.doRequest(schemaURL, "HAProxy stats schema")
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch HAProxy stats schema: %w", err)
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			slog.Error("Error closing response body", "error", closeErr)
-		}
-	}()
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HAProxy stats schema request failed with status code: %d", resp.StatusCode)
-	}
-
-	// Read and parse response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read HAProxy stats schema response: %w", err)
+		return nil, err
 	}
 
 	var schema StatsSchema
@@ -118,88 +172,38 @@ func (c *StatsClient) GetSchema() (*StatsSchema, error) {
 	return &schema, nil
 }
 
-// FilterStats filters the stats by proxy name and/or service name
-func (c *StatsClient) FilterStats(stats *HAProxyStats, proxyName, serviceName string) []common.StatItem {
-	var filtered []common.StatItem
+// filterStatsByType returns stats items matching the specified type
+func (c *StatsClient) filterStatsByType(stats *HAProxyStats, itemType int) []common.StatItem {
+	var result []common.StatItem
 
 	for _, item := range stats.Stats {
-		// Apply proxy name filter if provided
-		if proxyName != "" && item.PxName != proxyName {
-			continue
+		if item.GetType() == itemType {
+			result = append(result, common.StatItem{
+				ProxyName:   item.GetProxyName(),
+				ServiceName: item.GetServiceName(),
+				Type:        item.GetType(),
+				Status:      item.GetStatus(),
+				Weight:      item.GetWeight(),
+			})
 		}
-
-		// Apply service name filter if provided
-		if serviceName != "" && item.SvName != serviceName {
-			continue
-		}
-
-		filtered = append(filtered, common.StatItem{
-			ProxyName:   item.PxName,
-			ServiceName: item.SvName,
-			Type:        item.Type,
-			Status:      item.Status,
-			Weight:      item.Weight,
-		})
 	}
 
-	return filtered
+	return result
 }
 
 // GetFrontends returns all frontend stats
 func (c *StatsClient) GetFrontends(stats *HAProxyStats) []common.StatItem {
-	var frontends []common.StatItem
-
-	for _, item := range stats.Stats {
-		if item.Type == 0 { // Type 0 is frontend
-			frontends = append(frontends, common.StatItem{
-				ProxyName:   item.PxName,
-				ServiceName: item.SvName,
-				Type:        item.Type,
-				Status:      item.Status,
-				Weight:      item.Weight,
-			})
-		}
-	}
-
-	return frontends
+	return c.filterStatsByType(stats, 0) // Type 0 is frontend
 }
 
 // GetBackends returns all backend stats
 func (c *StatsClient) GetBackends(stats *HAProxyStats) []common.StatItem {
-	var backends []common.StatItem
-
-	for _, item := range stats.Stats {
-		if item.Type == 1 { // Type 1 is backend
-			backends = append(backends, common.StatItem{
-				ProxyName:   item.PxName,
-				ServiceName: item.SvName,
-				Type:        item.Type,
-				Status:      item.Status,
-				Weight:      item.Weight,
-			})
-		}
-	}
-
-	return backends
+	return c.filterStatsByType(stats, 1) // Type 1 is backend
 }
 
 // GetServers returns all server stats
 func (c *StatsClient) GetServers(stats *HAProxyStats) []common.StatItem {
-	var servers []common.StatItem
-
-	for _, item := range stats.Stats {
-		if item.Type == 2 { // Type 2 is server
-			servers = append(servers, common.StatItem{
-				ProxyName:   item.PxName,
-				ServiceName: item.SvName,
-				Type:        item.Type,
-				Status:      item.Status,
-				Weight:      item.Weight,
-			})
-		}
-	}
-
-	return servers
+	return c.filterStatsByType(stats, 2) // Type 2 is server
 }
 
 // GetServersByBackend returns all server stats for a specific backend
@@ -207,16 +211,80 @@ func (c *StatsClient) GetServersByBackend(stats *HAProxyStats, backendName strin
 	var servers []common.StatItem
 
 	for _, item := range stats.Stats {
-		if item.Type == 2 && item.PxName == backendName { // Type 2 is server
+		if item.GetType() == 2 && item.GetProxyName() == backendName { // Type 2 is server
 			servers = append(servers, common.StatItem{
-				ProxyName:   item.PxName,
-				ServiceName: item.SvName,
-				Type:        item.Type,
-				Status:      item.Status,
-				Weight:      item.Weight,
+				ProxyName:   item.GetProxyName(),
+				ServiceName: item.GetServiceName(),
+				Type:        item.GetType(),
+				Status:      item.GetStatus(),
+				Weight:      item.GetWeight(),
 			})
 		}
 	}
 
 	return servers
+}
+
+// Min returns the smaller of x or y.
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
+}
+
+// Helper function to check if a string contains a substring
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && s[len(s)-len(substr):] == substr
+}
+
+// Helper function to append a path to a URL, handling trailing slashes properly
+func appendPath(baseURL, path string) string {
+	if baseURL == "" {
+		return path
+	}
+
+	if path == "" {
+		return baseURL
+	}
+
+	// If path starts with a slash and baseURL ends with a slash, remove one
+	if baseURL[len(baseURL)-1] == '/' && path[0] == '/' {
+		return baseURL + path[1:]
+	}
+
+	// If neither has a slash, add one
+	if baseURL[len(baseURL)-1] != '/' && path[0] != '/' {
+		return baseURL + "/" + path
+	}
+
+	// Otherwise, just concatenate
+	return baseURL + path
+}
+
+// FilterStats filters the stats by proxy name and/or service name
+func (c *StatsClient) FilterStats(stats *HAProxyStats, proxyName, serviceName string) []common.StatItem {
+	var filtered []common.StatItem
+
+	for _, item := range stats.Stats {
+		// Apply proxy name filter if provided
+		if proxyName != "" && item.GetProxyName() != proxyName {
+			continue
+		}
+
+		// Apply service name filter if provided
+		if serviceName != "" && item.GetServiceName() != serviceName {
+			continue
+		}
+
+		filtered = append(filtered, common.StatItem{
+			ProxyName:   item.GetProxyName(),
+			ServiceName: item.GetServiceName(),
+			Type:        item.GetType(),
+			Status:      item.GetStatus(),
+			Weight:      item.GetWeight(),
+		})
+	}
+
+	return filtered
 }

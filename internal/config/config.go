@@ -10,14 +10,15 @@ import (
 // Config holds the application configuration.
 type Config struct {
 	// HAProxy Runtime API Settings
-	HAProxyHost          string `mapstructure:"HAPROXY_HOST"`
-	HAProxyPort          int    `mapstructure:"HAPROXY_PORT"`
-	HAProxyRuntimeMode   string `mapstructure:"HAPROXY_RUNTIME_MODE"`   // "tcp4" or "unix"
-	HAProxyRuntimeSocket string `mapstructure:"HAPROXY_RUNTIME_SOCKET"` // Used only when HAProxyRuntimeMode is "unix"
-	HAProxyRuntimeURL    string `mapstructure:"HAPROXY_RUNTIME_URL"`    // Optional: direct URL to runtime API
+	HAProxyHost           string `mapstructure:"HAPROXY_HOST"`
+	HAProxyPort           int    `mapstructure:"HAPROXY_PORT"`
+	HAProxyRuntimeMode    string `mapstructure:"HAPROXY_RUNTIME_MODE"`    // "tcp4" or "unix"
+	HAProxyRuntimeSocket  string `mapstructure:"HAPROXY_RUNTIME_SOCKET"`  // Used only when HAProxyRuntimeMode is "unix"
+	HAProxyRuntimeURL     string `mapstructure:"HAPROXY_RUNTIME_URL"`     // Optional: direct URL to runtime API
+	HAProxyRuntimeEnabled bool   `mapstructure:"HAPROXY_RUNTIME_ENABLED"` // Set to false to operate in stats-only mode
 
 	// HAProxy Stats Settings
-	HAProxyStatsURL     string `mapstructure:"HAPROXY_STATS_URL"`     // URL to HAProxy stats page (e.g., http://127.0.0.1:8404/;json)
+	HAProxyStatsURL     string `mapstructure:"HAPROXY_STATS_URL"`     // URL to HAProxy stats page (e.g., http://127.0.0.1:8404/stats)
 	HAProxyStatsEnabled bool   `mapstructure:"HAPROXY_STATS_ENABLED"` // Whether to use stats API
 
 	// MCP Server Settings
@@ -39,6 +40,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("HAPROXY_RUNTIME_MODE", "tcp4")                          // Default to TCP4 connections
 	viper.SetDefault("HAPROXY_RUNTIME_SOCKET", "/var/run/haproxy/admin.sock") // Only used in unix mode
 	viper.SetDefault("HAPROXY_RUNTIME_URL", "")                               // Optional direct URL
+	viper.SetDefault("HAPROXY_RUNTIME_ENABLED", true)                         // Enable Runtime API by default
 
 	// Set Defaults - Stats API
 	viper.SetDefault("HAPROXY_STATS_URL", "http://127.0.0.1:8404/stats") // Default stats URL
