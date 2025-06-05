@@ -40,7 +40,7 @@ func New(
 		Repo:    repo,
 		Image:   image,
 		App:     app,
-		Backend: dag.Backend(source.WithoutDirectory("internal")),
+		Backend: dag.Backend(source), // Include all directories including internal
 	}
 	return g
 }
