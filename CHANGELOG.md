@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/tuannvm/haproxy-mcp-server/compare/v1.0.12...v1.1.0) (2025-06-05)
+
+
+### Features
+
+* **backend:** initialize backend and frontend modules with setup files ([6112702](https://github.com/tuannvm/haproxy-mcp-server/commit/61127020ab3f6b67a5ef8fa4387901681cf62e36))
+
 ## [1.0.12](https://github.com/tuannvm/haproxy-mcp-server/compare/v1.0.11...v1.0.12) (2025-05-12)
 
 ## [1.0.11](https://github.com/tuannvm/haproxy-mcp-server/compare/v1.0.10...v1.0.11) (2025-05-06)
