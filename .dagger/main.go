@@ -68,12 +68,6 @@ func (g *HaproxyMcpServer) Check(
 		return "", err
 	}
 
-	// Then Build
-	_, err = g.Build().Sync(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	return lintOut + "\n\n", nil
 }
 
