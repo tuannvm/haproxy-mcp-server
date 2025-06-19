@@ -22,7 +22,7 @@ ARG BINARY_NAME=app
 # Build the Go app
 # -ldflags="-w -s" reduces the size of the binary by removing debug information.
 # CGO_ENABLED=0 disables CGO for static linking, useful for alpine base images.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /${BINARY_NAME} ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /${BINARY_NAME} ./cmd/
 
 # --- Start final stage --- #
 
