@@ -17,8 +17,8 @@ jobs:
       - name: Set up GitHub token
         id: generate-token
         run: echo "token=${{ github.token }}" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
-      - uses: dagger/dagger-for-github@8.0.0
+      - uses: actions/checkout@v5
+      - uses: dagger/dagger-for-github@v8.1.0
       - name: slash agent
         if: github.event.issue.pull_request && contains(github.event.comment.body, '/agent')
         run: dagger call pull-request-feedback --github-token GH_TOKEN --issue-id ${{ github.event.issue.number }} --feedback "${{ github.event.comment.body }}"
