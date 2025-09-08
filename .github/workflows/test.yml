@@ -10,8 +10,8 @@ jobs:
       - name: Set up GitHub token
         id: generate-token
         run: echo "token=${{ github.token }}" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
-      - uses: dagger/dagger-for-github@8.0.0
+      - uses: actions/checkout@v5
+      - uses: dagger/dagger-for-github@v8.1.0
       - name: Check
         run: dagger call check --github-token GH_TOKEN --model gpt-4.1 --commit $GITHUB_SHA
         env:
